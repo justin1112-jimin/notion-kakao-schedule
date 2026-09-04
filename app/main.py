@@ -38,7 +38,7 @@ def _render_settings(request: Request, **extra):
         "kakao_connected": bool(settings["kakao_refresh_token"]),
         **extra,
     }
-    return templates.TemplateResponse("settings.html", context)
+    return templates.TemplateResponse(request=request, name="settings.html", context=context)
 
 
 @app.get("/")
