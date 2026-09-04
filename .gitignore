@@ -1,0 +1,9 @@
+venv/
+data/
+.env
+__pycache__/
+*.pyc
+notify.log
+notify_error.log
+uvicorn.log
+_v1_backup/

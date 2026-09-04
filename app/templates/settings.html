@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Notion → 카카오 일정 알림</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 20px; }
+  fieldset { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; padding: 16px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  label { display: block; margin-top: 12px; font-size: 13px; color: #555; }
+  input[type=text], input[type=password], input[type=number] {
+    width: 100%; box-sizing: border-box; padding: 8px; margin-top: 4px;
+    border: 1px solid #ccc; border-radius: 6px; font-size: 14px;
+  }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button { margin-top: 16px; padding: 8px 16px; border: none; border-radius: 6px; background: #222; color: #fff; cursor: pointer; }
+  button.secondary { background: #888; }
+  .flash { background: #eaffea; border: 1px solid #9d9; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .status { font-size: 13px; color: #555; margin-top: 6px; }
+  .connected { color: #1a7a1a; font-weight: 600; }
+  .disconnected { color: #b33; font-weight: 600; }
+  pre { background: #f6f6f6; padding: 12px; border-radius: 6px; white-space: pre-wrap; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>📅 Notion → 카카오 일정 알림</h1>
+
+{% if flash == "saved" %}<div class="flash">설정이 저장되었습니다.</div>{% endif %}
+{% if flash == "kakao_connected" %}<div class="flash">카카오 연결이 완료되었습니다.</div>{% endif %}
+
+<form method="post" action="/settings">
+  <fieldset>
+    <legend>Notion</legend>
+    <label>Integration Token (비워두면 기존 값 유지, 현재: {{ notion_token_display or "미설정" }})</label>
+    <input type="password" name="notion_token" placeholder="secret_...">
+
+    <label>Database ID</label>
+    <input type="text" name="notion_database_id" value="{{ settings.notion_database_id }}" required>
+
+    <div class="row">
+      <div>
+        <label>날짜 속성명</label>
+        <input type="text" name="notion_date_property" value="{{ settings.notion_date_property }}" required>
+      </div>
+      <div>
+        <label>제목 속성명</label>
+        <input type="text" name="notion_title_property" value="{{ settings.notion_title_property }}" required>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>카카오</legend>
+    <label>REST API 키 (비워두면 기존 값 유지, 현재: {{ kakao_rest_api_key_display or "미설정" }})</label>
+    <input type="password" name="kakao_rest_api_key" placeholder="REST API 키">
+
+    <label>Client Secret (선택, 비워두면 기존 값 유지, 현재: {{ kakao_client_secret_display or "미설정" }})</label>
+    <input type="password" name="kakao_client_secret" placeholder="Client Secret">
+
+    <div class="status">
+      연결 상태:
+      {% if kakao_connected %}<span class="connected">✅ 연결됨</span>{% else %}<span class="disconnected">❌ 미연결</span>{% endif %}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>알림 시각</legend>
+    <div class="row">
+      <div>
+        <label>시(0-23)</label>
+        <input type="number" name="notify_hour" min="0" max="23" value="{{ settings.notify_hour }}" required>
+      </div>
+      <div>
+        <label>분(0-59)</label>
+        <input type="number" name="notify_minute" min="0" max="59" value="{{ settings.notify_minute }}" required>
+      </div>
+    </div>
+  </fieldset>
+
+  <button type="submit">저장</button>
+</form>
+
+<form method="get" action="/kakao/connect" style="display:inline">
+  <button type="submit" class="secondary">카카오 연결{% if kakao_connected %} 다시하기{% endif %}</button>
+</form>
+
+<form method="post" action="/preview" style="display:inline">
+  <button type="submit" class="secondary">오늘 일정 미리보기</button>
+</form>
+
+<form method="post" action="/test-send" style="display:inline">
+  <button type="submit" class="secondary">지금 테스트 전송</button>
+</form>
+
+<div class="status">
+  마지막 전송: {{ settings.last_sent_at or "없음" }}
+  {% if settings.last_sent_status %}({{ settings.last_sent_status }}){% endif %}
+</div>
+
+{% if preview_message %}
+<h3>미리보기</h3>
+<pre>{{ preview_message }}</pre>
+{% endif %}
+
+{% if test_result %}
+<h3>테스트 전송 결과</h3>
+<pre>{{ test_result }}</pre>
+{% endif %}
+
+</body>
+</html>
