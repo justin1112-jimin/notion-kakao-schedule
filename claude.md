@@ -57,11 +57,11 @@ Upstash Redis (설정/토큰 저장)          Notion 조회 → 메시지 포맷
 
 ## 현재 상태 (다음에 이어서 할 일)
 - [x] FastAPI 웹앱 코드 작성, GitHub push, Render 배포, 500 에러 수정 → `/settings` 정상 렌더링 확인됨
-- [ ] Render Redis가 비어있는 상태 — `/settings`에서 Notion 토큰/DB ID/속성명, 카카오 REST 키/시크릿 입력 후 저장 필요
-- [ ] 카카오 디벨로퍼스 콘솔에 Redirect URI로 `https://notion-kakao-schedule.onrender.com/kakao/callback` 추가 필요
-- [ ] "카카오 연결" 버튼으로 배포 환경에서 OAuth 재인증 필요 (로컬 refresh token은 Redis로 안 옮김)
-- [ ] "오늘 일정 미리보기" / "지금 테스트 전송"으로 배포 환경 end-to-end 검증
-- [ ] UptimeRobot(또는 유사 서비스)으로 5분 간격 핑 설정 — 아직 미설정
+- [x] Render Redis에 Notion 토큰/DB ID/속성명, 카카오 REST 키/시크릿 입력 완료 (2026-09-05, v1 `_v1_backup/.env` 값 재사용)
+- [x] 카카오 디벨로퍼스 콘솔에 Redirect URI `https://notion-kakao-schedule.onrender.com/kakao/callback` 등록 완료
+- [x] "카카오 연결" 버튼으로 배포 환경에서 OAuth 재인증 완료 (연결 상태 ✅ 확인)
+- [x] "지금 테스트 전송"으로 배포 환경 end-to-end 검증 완료 (2026-09-05 14:30 성공, Notion 일정 정상 수신)
+- [x] UptimeRobot으로 5분 간격 핑 설정 완료 (2026-09-05, `notion-kakao-schedule.onrender.com` 모니터링 중)
 - [ ] 알림 시각 08:00 자동 발송이 실제로 되는지 하루 지켜보고 확인
 
 ## 그다음 이어서 할 수 있는 작업 (v2 로드맵)
