@@ -55,6 +55,34 @@ Upstash Redis (설정/토큰 저장)          Notion 조회 → 메시지 포맷
 
 ---
 
+## 인증 (Google 로그인, 2026-09-06 추가)
+
+`/settings` 등 모든 라우트가 로그인 없이 완전히 공개되어 있던 걸 발견 (URL만 알면 누구나 조회/수정/카카오 연결 하이재킹 가능). Google OAuth로 막되, 회원가입 없이 **허용된 이메일 1개만** 통과시키는 개인용 게이트로 구현.
+
+- `app/auth.py`: Google 인가 URL 생성 + code → email 교환 (`requests`로 직접 호출, 별도 OAuth 라이브러리 없이 authorization code flow + userinfo 엔드포인트만 사용)
+- `app/main.py`: `SessionMiddleware`(서명된 쿠키, `itsdangerous` 필요)로 세션 관리 + `require_login` 미들웨어로 `/login`, `/auth/callback` 제외한 모든 경로 차단. **미들웨어 등록 순서 주의**: `require_login`을 데코레이터로 먼저 등록하고 `app.add_middleware(SessionMiddleware, ...)`를 그 다음에 호출해야 함 (나중에 추가한 미들웨어가 바깥쪽/먼저 실행되는 Starlette 규칙상, SessionMiddleware가 `request.session`을 채워놓은 뒤에 `require_login`이 읽어야 하므로).
+- `/login` → Google 인가 URL로 리다이렉트, `/auth/callback` → code 교환 후 이메일이 `ALLOWED_GOOGLE_EMAIL`과 일치할 때만 세션에 `logged_in=True` 저장, `/logout` → 세션 초기화.
+- **구글 로그인은 "책임 전가" 수단이 아님**: OAuth는 신원 확인일 뿐이고, 뚫렸을 때 배상 책임은 여전히 앱 운영자(나)에게 있음. 순수하게 "공유 비밀번호 하나보다 계정 탈취가 더 어렵다"는 보안 강도 관점에서 선택한 것.
+
+### 필요한 신규 환경변수 (Render)
+| 변수 | 값 |
+|---|---|
+| `GOOGLE_CLIENT_ID` | Google Cloud Console에서 발급 |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud Console에서 발급 |
+| `ALLOWED_GOOGLE_EMAIL` | 로그인 허용할 본인 Gmail 주소 |
+| `SESSION_SECRET_KEY` | 세션 쿠키 서명용 랜덤 문자열 (한 번 생성해서 고정, 안 그러면 재배포마다 전체 로그아웃됨) |
+
+### Google Cloud Console 설정 순서 (배포 전 사람이 직접 해야 함)
+1. https://console.cloud.google.com/ → 프로젝트 선택/생성
+2. "API 및 서비스" → "OAuth 동의 화면": User Type "외부", 앱 이름/본인 이메일만 입력하고 "테스트" 게시 상태로 유지
+3. 같은 화면의 "테스트 사용자"에 본인 Gmail 주소 추가 (안 하면 로그인 시 `access_denied`)
+4. "사용자 인증 정보" → "사용자 인증 정보 만들기" → "OAuth 클라이언트 ID" → 유형: 웹 애플리케이션
+5. "승인된 리디렉션 URI"에 `https://notion-kakao-schedule.onrender.com/auth/callback` 등록
+6. 발급된 클라이언트 ID/보안 비밀을 위 환경변수에 입력
+
+### 배포 순서 주의
+Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발생, 코드는 아직 이전 버전이라 무해함) → 그 다음에 이 코드를 git push. 반대로 하면(코드 먼저 push) env var가 없어서 앱이 기동 중 `KeyError: SESSION_SECRET_KEY`로 크래시하고 사이트가 잠깐 죽어있는 상태가 됨.
+
 ## 현재 상태 (다음에 이어서 할 일)
 - [x] FastAPI 웹앱 코드 작성, GitHub push, Render 배포, 500 에러 수정 → `/settings` 정상 렌더링 확인됨
 - [x] Render Redis에 Notion 토큰/DB ID/속성명, 카카오 REST 키/시크릿 입력 완료 (2026-09-05, v1 `_v1_backup/.env` 값 재사용)
@@ -62,7 +90,11 @@ Upstash Redis (설정/토큰 저장)          Notion 조회 → 메시지 포맷
 - [x] "카카오 연결" 버튼으로 배포 환경에서 OAuth 재인증 완료 (연결 상태 ✅ 확인)
 - [x] "지금 테스트 전송"으로 배포 환경 end-to-end 검증 완료 (2026-09-05 14:30 성공, Notion 일정 정상 수신)
 - [x] UptimeRobot으로 5분 간격 핑 설정 완료 (2026-09-05, `notion-kakao-schedule.onrender.com` 모니터링 중)
-- [ ] 알림 시각 08:00 자동 발송이 실제로 되는지 하루 지켜보고 확인
+- [x] 알림 시각 08:00 자동 발송이 실제로 되는지 하루 지켜보고 확인
+- [x] `/settings` 등 전체 라우트가 무인증 상태였던 것 발견, Google 로그인(허용 이메일 1개 게이트) 코드 작성 완료 (2026-09-06)
+- [ ] Google Cloud Console에서 OAuth 클라이언트 생성 + 테스트 사용자 등록 (위 "인증" 섹션 순서대로)
+- [ ] Render에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`ALLOWED_GOOGLE_EMAIL`/`SESSION_SECRET_KEY` 추가
+- [ ] 환경변수 저장 확인 후 이 코드 git push, 배포 후 본인 계정 로그인 성공 + 다른 계정 차단 확인
 
 ## 그다음 이어서 할 수 있는 작업 (v2 로드맵)
 - Capacitor로 하이브리드 앱 패키징 (iOS/Android)

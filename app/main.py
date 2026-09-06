@@ -1,13 +1,18 @@
+import os
+import secrets
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
-from app import db, kakao_client, notion_client, scheduler
+from app import auth, db, kakao_client, notion_client, scheduler
 
 templates = Jinja2Templates(directory="app/templates")
+
+PUBLIC_PATHS = {"/login", "/auth/callback"}
 
 
 @asynccontextmanager
@@ -19,6 +24,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    if request.url.path in PUBLIC_PATHS or request.session.get("logged_in"):
+        return await call_next(request)
+    return RedirectResponse("/login")
+
+
+# Must be added after `require_login` above so it ends up as the outer
+# middleware and populates request.session before require_login reads it.
+app.add_middleware(SessionMiddleware, secret_key=os.environ["SESSION_SECRET_KEY"])
 
 
 def _mask(value: str) -> str:
@@ -44,6 +61,34 @@ def _render_settings(request: Request, **extra):
 @app.get("/")
 async def root():
     return RedirectResponse("/settings")
+
+
+@app.get("/login")
+async def login(request: Request):
+    state = secrets.token_urlsafe(16)
+    request.session["oauth_state"] = state
+    redirect_uri = str(request.url_for("auth_callback"))
+    return RedirectResponse(auth.build_authorize_url(redirect_uri, state))
+
+
+@app.get("/auth/callback", name="auth_callback")
+async def auth_callback(request: Request, code: str, state: str):
+    if state != request.session.get("oauth_state"):
+        return PlainTextResponse("잘못된 요청입니다. 다시 로그인해주세요.", status_code=400)
+
+    redirect_uri = str(request.url_for("auth_callback"))
+    email = auth.fetch_email(redirect_uri, code)
+    if not auth.is_allowed_email(email):
+        return PlainTextResponse("접근 권한이 없는 계정입니다.", status_code=403)
+
+    request.session["logged_in"] = True
+    return RedirectResponse("/settings")
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login")
 
 
 @app.get("/settings")
