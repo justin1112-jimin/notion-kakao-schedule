@@ -83,6 +83,9 @@ Upstash Redis (설정/토큰 저장)          Notion 조회 → 메시지 포맷
 ### 배포 순서 주의
 Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발생, 코드는 아직 이전 버전이라 무해함) → 그 다음에 이 코드를 git push. 반대로 하면(코드 먼저 push) env var가 없어서 앱이 기동 중 `KeyError: SESSION_SECRET_KEY`로 크래시하고 사이트가 잠깐 죽어있는 상태가 됨.
 
+### 배포 중 겪은 이슈 (해결됨)
+- 실제로 env var 추가보다 코드 push가 먼저 나가서, 배포가 `KeyError: 'SESSION_SECRET_KEY'`로 실패함 (Render Environment 탭에 `REDIS_URL`만 있고 나머지 4개가 빠져 있었음). Render는 새 배포가 실패하면 이전 버전을 계속 서비스하기 때문에 겉으로는 "그냥 로그인 없이 옛날 화면이 계속 뜨는" 것처럼 보여서 원인 파악에 로그 확인이 필요했음. 4개 환경변수 모두 추가 후 재배포 성공, `/settings` 비로그인 접근 시 `/login`으로 리다이렉트되는 것까지 확인.
+
 ## 현재 상태 (다음에 이어서 할 일)
 - [x] FastAPI 웹앱 코드 작성, GitHub push, Render 배포, 500 에러 수정 → `/settings` 정상 렌더링 확인됨
 - [x] Render Redis에 Notion 토큰/DB ID/속성명, 카카오 REST 키/시크릿 입력 완료 (2026-09-05, v1 `_v1_backup/.env` 값 재사용)
@@ -92,9 +95,10 @@ Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발�
 - [x] UptimeRobot으로 5분 간격 핑 설정 완료 (2026-09-05, `notion-kakao-schedule.onrender.com` 모니터링 중)
 - [x] 알림 시각 08:00 자동 발송이 실제로 되는지 하루 지켜보고 확인
 - [x] `/settings` 등 전체 라우트가 무인증 상태였던 것 발견, Google 로그인(허용 이메일 1개 게이트) 코드 작성 완료 (2026-09-06)
-- [ ] Google Cloud Console에서 OAuth 클라이언트 생성 + 테스트 사용자 등록 (위 "인증" 섹션 순서대로)
-- [ ] Render에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`ALLOWED_GOOGLE_EMAIL`/`SESSION_SECRET_KEY` 추가
-- [ ] 환경변수 저장 확인 후 이 코드 git push, 배포 후 본인 계정 로그인 성공 + 다른 계정 차단 확인
+- [x] Google Cloud Console에서 OAuth 클라이언트 생성 + 테스트 사용자(`koreajimin@gmail.com`) 등록 완료
+- [x] Render에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`ALLOWED_GOOGLE_EMAIL`/`SESSION_SECRET_KEY` 추가 완료 (1차 시도 때 `SESSION_SECRET_KEY` 누락으로 배포 실패 → 재추가 후 해결, 위 "배포 중 겪은 이슈" 참고)
+- [x] 재배포 성공 확인 (`/settings` 비로그인 접근 시 `/login`으로 리다이렉트되는 것 확인, 2026-09-06)
+- [ ] 실제로 `koreajimin@gmail.com` 계정으로 로그인해서 `/settings` 정상 진입되는지 최종 확인
 
 ## 그다음 이어서 할 수 있는 작업 (v2 로드맵)
 - Capacitor로 하이브리드 앱 패키징 (iOS/Android)
