@@ -1,0 +1,26 @@
+name: Daily Notify Backup
+
+on:
+  schedule:
+    # 23:10 UTC = 08:10 KST — 10분 뒤 앱 내부 스케줄러(08:00 KST)가 이미
+    # 보냈으면 조용히 no-op, 못 보냈으면 여기서 재시도.
+    - cron: "10 23 * * *"
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call /internal/run-daily
+        run: |
+          response=$(curl -sS --connect-timeout 30 --max-time 120 \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -w '\n%{http_code}' \
+            https://notion-kakao-schedule.onrender.com/internal/run-daily)
+          status="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+          echo "$body"
+          if [ "$status" -ge 400 ]; then
+            echo "::error::run-daily failed with status $status"
+            exit 1
+          fi

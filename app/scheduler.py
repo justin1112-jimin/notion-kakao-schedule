@@ -51,3 +51,10 @@ def create_scheduler(settings: dict) -> BackgroundScheduler:
 
 def reschedule(sched: BackgroundScheduler, hour: int, minute: int):
     sched.reschedule_job(JOB_ID, trigger=CronTrigger(hour=hour, minute=minute, timezone=KST))
+
+
+def already_sent_today(settings: dict) -> bool:
+    if settings["last_sent_status"] != "success" or not settings["last_sent_at"]:
+        return False
+    last_sent = datetime.fromisoformat(settings["last_sent_at"])
+    return last_sent.astimezone(KST).date() == datetime.now(KST).date()

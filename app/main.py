@@ -12,7 +12,9 @@ from app import auth, db, kakao_client, notion_client, scheduler
 
 templates = Jinja2Templates(directory="app/templates")
 
-PUBLIC_PATHS = {"/login", "/auth/callback"}
+# "/internal/run-daily" skips the login session check but enforces its own
+# secret-header check inside the handler (called by GitHub Actions, not a browser).
+PUBLIC_PATHS = {"/login", "/auth/callback", "/internal/run-daily"}
 
 
 @asynccontextmanager
@@ -165,3 +167,19 @@ async def test_send(request: Request):
         return _render_settings(request, test_result=f"성공\n{message}")
     except Exception as e:
         return _render_settings(request, test_result=f"실패: {e}")
+
+
+@app.get("/internal/run-daily")
+async def internal_run_daily(request: Request):
+    if request.headers.get("X-Cron-Secret") != os.environ["CRON_SECRET"]:
+        return PlainTextResponse("unauthorized", status_code=401)
+
+    settings = db.get_settings()
+    if scheduler.already_sent_today(settings):
+        return PlainTextResponse("already sent today", status_code=200)
+
+    try:
+        scheduler.run_daily_job()
+        return PlainTextResponse("sent", status_code=200)
+    except Exception as e:
+        return PlainTextResponse(f"failed: {e}", status_code=500)

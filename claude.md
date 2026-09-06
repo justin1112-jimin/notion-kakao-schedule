@@ -5,7 +5,7 @@ Notion에서 **오늘 날짜의 일정**을 가져와, 매일 아침 **카카오
 
 - **v1 (완료 → 은퇴)**: 로컬 Python 스크립트 + macOS launchd. 정상 작동까지 검증했으나 v2로 완전히 대체됨. 코드는 `_v1_backup/`에 보관(gitignore, 배포 미포함).
 - **v2 (진행 중)**: FastAPI 웹앱으로 전환, Render에 배포. 최종 목표는 **하이브리드 앱**(Capacitor로 이 웹 UI를 감싸 iOS/Android 앱으로 배포).
-
+ 
 ---
 
 ## v1 — 은퇴한 로컬 스크립트 버전
@@ -99,6 +99,23 @@ Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발�
 - [x] Render에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`ALLOWED_GOOGLE_EMAIL`/`SESSION_SECRET_KEY` 추가 완료 (1차 시도 때 `SESSION_SECRET_KEY` 누락으로 배포 실패 → 재추가 후 해결, 위 "배포 중 겪은 이슈" 참고)
 - [x] 재배포 성공 확인 (`/settings` 비로그인 접근 시 `/login`으로 리다이렉트되는 것 확인, 2026-09-06)
 - [ ] 실제로 `koreajimin@gmail.com` 계정으로 로그인해서 `/settings` 정상 진입되는지 최종 확인
+
+## 발송 실패 안전망 (GitHub Actions 백업 트리거, 2026-09-07 추가)
+
+기존엔 발송 실패가 `last_sent_status`에 기록만 되고(`app/db.py`), `/settings`에 직접 들어가야만 알 수 있었음(능동 알림 없음). 새 서비스/인프라 추가 없이 **GitHub Actions의 기본 "스케줄 워크플로우 실패 시 이메일" 기능**을 그대로 활용해 해결.
+
+- `app/main.py`의 `/internal/run-daily`: 로그인 세션 대신 `X-Cron-Secret` 헤더로 인증하는 별도 엔드포인트. 오늘 이미 성공 발송했으면(`scheduler.already_sent_today`) no-op(200), 아니면 `run_daily_job()`을 실행해 재시도. 실패하면 예외 메시지를 그대로 500 응답 본문에 담아 반환(어느 단계—Notion/카카오 토큰/카카오 발송—에서 실패했는지 로그에서 바로 보이게).
+- `.github/workflows/daily-notify-backup.yml`: 매일 08:10 KST(=23:10 UTC)에 위 엔드포인트를 호출. 앱 내부 APScheduler(08:00 KST)가 이미 정상 발송했으면 조용히 넘어가고, 못 보냈으면 여기서 재시도 + 실패 시 GitHub Actions 워크플로우 자체가 실패 처리되어 **저장소 소유자에게 자동으로 실패 이메일 발송** (별도 SMTP/이메일 서비스 구축 없음).
+- 자동 복구(토큰 자동 재발급 등)는 만들지 않음 — 사람이 이메일 받고 원인(Notion 토큰 만료/카카오 재인증 필요/일시적 오류 등)에 맞게 수동 조치. 스케일이 커지면 자동 복구를 고려하기로 함.
+
+### 필요한 신규 환경변수/시크릿
+| 위치 | 이름 | 값 |
+|---|---|---|
+| Render | `CRON_SECRET` | 임의의 랜덤 문자열 (한 번 생성해서 고정) |
+| GitHub 저장소 Settings → Secrets and variables → Actions | `CRON_SECRET` | Render와 동일한 값 |
+
+### 배포 순서 주의
+기존 패턴과 동일하게, Render에 `CRON_SECRET` 환경변수를 먼저 추가(재배포 1회 발생, 코드는 아직 이전 버전이라 무해함) → 그 다음 이 코드를 git push. GitHub 저장소 시크릿은 push 전후 아무때나 추가해도 무방(워크플로우가 실제 스케줄로 실행되는 시점에만 필요).
 
 ## 그다음 이어서 할 수 있는 작업 (v2 로드맵)
 - Capacitor로 하이브리드 앱 패키징 (iOS/Android)
