@@ -118,28 +118,30 @@ Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발�
 
 Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1회 정상 동작(성공 또는 no-op)하는 것까지 확인함. 이후 08:10 KST 실행에서 실패가 나면 저장소 소유자 이메일로 통보되는 구조가 실전 배포됨.
 
-## 진행 중인 작업
+## 진행 완료
 
-### 대시보드 추가 (2026-09-07 시작)
-**목표**: 발송 이력 및 현황을 한눈에 볼 수 있는 대시보드 페이지 추가
+### 대시보드 추가 (2026-09-07 완료)
+**목표**: 발송 이력 및 현황을 한눈에 볼 수 있는 대시보드 페이지 추가 ✅
 
-**구현 계획**:
-1. **Redis 발송 기록 저장** (`app/db.py`)
-   - `send_history:{timestamp}` 형태로 최근 100개 기록 유지
-   - 각 기록: `{"timestamp", "status", "source", "message"}`
+**구현 완료**:
+1. **Redis 발송 기록 저장** (`app/db.py`) ✅
+   - `add_send_history()`, `get_send_history()`, `get_send_statistics()` 함수 추가
+   - 최근 100개 기록 유지, 각 기록: `{"timestamp", "status", "source", "message"}`
    
-2. **발송 시 기록 저장** (`app/scheduler.py`, `app/kakao_client.py`)
-   - `run_daily_job()`, 테스트 전송, 백업 트리거 모두 동일한 함수로 기록
+2. **발송 시 기록 저장** (`app/scheduler.py`) ✅
+   - `run_daily_job(source)` 파라미터 추가, 성공/실패 모두 기록
+   - 발송 출처: "scheduler" (08:00 자동), "backup" (GitHub Actions), "manual" (테스트)
 
-3. **API 엔드포인트** (`app/main.py`)
-   - `GET /api/send-history` → 최근 30개 기록 + 통계 (성공률, 일주일 집계)
-   - `/dashboard` → 대시보드 HTML 페이지 (로그인 필수)
+3. **API 엔드포인트** (`app/main.py`) ✅
+   - `GET /api/send-history` → 최근 30개 기록 + 통계 JSON 반환
+   - `GET /dashboard` → 대시보드 HTML 페이지 (로그인 필수)
 
-4. **UI** (`app/templates/dashboard.html`)
-   - 요약: 최근 7일 성공률, 자동/백업/수동 발송 카운트
-   - 이력 테이블: 날짜, 상태, 발송 출처, 에러 메시지
+4. **UI** (`app/templates/dashboard.html`) ✅
+   - 요약: 전체 성공률, 7일 성공률, 발송 출처별 카운트
+   - 이력 테이블: 날짜/시간, 상태 배지, 출처 배지, 에러 메시지
+   - 반응형 디자인, settings.html 통합 네비게이션
 
-**예상 소요 시간**: ~1시간 (Redis 저장 15분 + API 20분 + UI 30분)
+**커밋**: `fc4d43f` (2026-09-07)
 
 ---
 
