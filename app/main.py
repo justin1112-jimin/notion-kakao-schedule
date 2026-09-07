@@ -170,8 +170,11 @@ async def test_send(request: Request):
 
 
 @app.get("/api/send-history")
-async def api_send_history():
+async def api_send_history(request: Request):
     """발송 이력 및 통계 JSON 반환"""
+    if not request.session.get("logged_in"):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
     history = db.get_send_history(limit=30)
     stats = db.get_send_statistics()
     return JSONResponse({
@@ -182,7 +185,7 @@ async def api_send_history():
 
 @app.get("/dashboard")
 async def dashboard(request: Request):
-    """발송 이력 대시보드"""
+    """발송 이력 대시보드 (로그인 필수)"""
     history = db.get_send_history(limit=30)
     stats = db.get_send_statistics()
     context = {

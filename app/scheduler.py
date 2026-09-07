@@ -41,8 +41,26 @@ def run_daily_job(source: str = "scheduler") -> str:
     except Exception as e:
         error_msg = str(e)
         db.record_send_result(f"error: {error_msg}", now)
-        db.add_send_history(now, "failed", source, error_msg)
+        db.add_send_history(now, "failed", source, _sanitize_error(error_msg))
         raise
+
+
+def _sanitize_error(error_msg: str) -> str:
+    """에러 메시지에서 민감한 정보 제거 (API/대시보드에서 노출될 예정)"""
+    if not error_msg:
+        return "Unknown error"
+    msg = error_msg.lower()
+    if "connection" in msg or "timeout" in msg or "network" in msg:
+        return "Connection error"
+    if "token" in msg or "unauthorized" in msg or "401" in msg:
+        return "Authentication failed"
+    if "403" in msg or "forbidden" in msg:
+        return "Permission denied"
+    if "404" in msg or "not found" in msg:
+        return "Resource not found"
+    if "invalid" in msg or "bad" in msg:
+        return "Invalid request"
+    return "Request failed"
 
 
 def create_scheduler(settings: dict) -> BackgroundScheduler:
