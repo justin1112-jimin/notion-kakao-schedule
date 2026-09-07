@@ -16,6 +16,8 @@ DEFAULTS = {
     "notify_minute": "0",
     "last_sent_at": "",
     "last_sent_status": "",
+    "google_calendar_refresh_token": "",
+    "calendar_sources": "notion",  # "notion" | "google" | "notion,google"
 }
 
 
@@ -70,6 +72,17 @@ def update_general_settings(
 def update_kakao_refresh_token(token: str):
     client = get_client()
     client.hset(KEY, "kakao_refresh_token", token)
+
+
+def update_google_calendar_refresh_token(token: str):
+    client = get_client()
+    client.hset(KEY, "google_calendar_refresh_token", token)
+
+
+def update_calendar_sources(sources: str):
+    """활성화된 캘린더 소스 저장 (comma-separated: "notion" | "google" | "notion,google")"""
+    client = get_client()
+    client.hset(KEY, "calendar_sources", sources)
 
 
 def record_send_result(status: str, when: str):

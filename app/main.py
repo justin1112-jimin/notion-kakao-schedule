@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import auth, db, kakao_client, notion_client, scheduler
+from app import auth, db, google_calendar_client, kakao_client, notion_client, scheduler
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -55,6 +55,7 @@ def _render_settings(request: Request, **extra):
         "kakao_rest_api_key_display": _mask(settings["kakao_rest_api_key"]),
         "kakao_client_secret_display": _mask(settings["kakao_client_secret"]),
         "kakao_connected": bool(settings["kakao_refresh_token"]),
+        "google_calendar_connected": bool(settings["google_calendar_refresh_token"]),
         **extra,
     }
     return templates.TemplateResponse(request=request, name="settings.html", context=context)
@@ -145,6 +146,31 @@ async def kakao_callback(request: Request, code: str):
     )
     db.update_kakao_refresh_token(tokens["refresh_token"])
     return RedirectResponse("/settings?flash=kakao_connected", status_code=303)
+
+
+@app.get("/google-calendar/connect")
+async def google_calendar_connect(request: Request):
+    state = secrets.token_urlsafe(16)
+    request.session["oauth_state_calendar"] = state
+    redirect_uri = str(request.url_for("google_calendar_callback"))
+    url = google_calendar_client.build_calendar_authorize_url(redirect_uri, state)
+    return RedirectResponse(url)
+
+
+@app.get("/google-calendar/callback", name="google_calendar_callback")
+async def google_calendar_callback(request: Request, code: str, state: str):
+    if state != request.session.get("oauth_state_calendar"):
+        return PlainTextResponse("잘못된 요청입니다.", status_code=400)
+
+    redirect_uri = str(request.url_for("google_calendar_callback"))
+    tokens = google_calendar_client.exchange_code_for_tokens(redirect_uri, code)
+    db.update_google_calendar_refresh_token(tokens["refresh_token"])
+    # Google Calendar를 기본으로 활성화
+    current_sources = db.get_settings().get("calendar_sources", "notion")
+    if "google" not in current_sources:
+        new_sources = f"{current_sources},google" if current_sources else "google"
+        db.update_calendar_sources(new_sources)
+    return RedirectResponse("/settings?flash=google_calendar_connected", status_code=303)
 
 
 @app.post("/preview")

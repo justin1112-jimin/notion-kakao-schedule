@@ -134,6 +134,7 @@
 
   {% if flash == "saved" %}<div class="flash">✅ 설정이 저장되었습니다.</div>{% endif %}
   {% if flash == "kakao_connected" %}<div class="flash">✅ 카카오 연결이 완료되었습니다.</div>{% endif %}
+  {% if flash == "google_calendar_connected" %}<div class="flash">✅ Google Calendar 연결이 완료되었습니다.</div>{% endif %}
 
   <div class="card">
     <form method="post" action="/settings">
@@ -169,6 +170,22 @@
           연결 상태:
           {% if kakao_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
         </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Google Calendar (선택)</legend>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">
+          Notion 외에 Google Calendar 일정도 함께 받아보세요
+        </p>
+        <div class="status-line">
+          연결 상태:
+          {% if google_calendar_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
+        </div>
+        {% if not google_calendar_connected %}
+        <form action="/google-calendar/connect" method="get">
+          <button type="submit" class="secondary" style="margin-top: 12px;">Google Calendar 연결</button>
+        </form>
+        {% endif %}
       </fieldset>
 
       <fieldset>

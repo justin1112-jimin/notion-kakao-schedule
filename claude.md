@@ -3,22 +3,24 @@
 ## 프로젝트 개요
 Notion에서 **오늘 날짜의 일정**을 가져와, 매일 아침 **카카오톡 "나에게 보내기"**로 요약 메시지를 자동 전송하는 개인용 자동화 도구.
 
-- **v1 (완료 → 은퇴)**: 로컬 Python 스크립트 + macOS launchd. 정상 작동까지 검증했으나 v2로 완전히 대체됨. 코드는 `_v1_backup/`에 보관(gitignore, 배포 미포함).
-- **v2 (진행 중)**: FastAPI 웹앱으로 전환, Render에 배포. 최종 목표는 **하이브리드 앱**(Capacitor로 이 웹 UI를 감싸 iOS/Android 앱으로 배포).
+### 버전 관리
+- **구형 v1 (은퇴, `_v1_backup/`)**: 로컬 Python 스크립트 + macOS launchd
+- **현재 v1 (완료, 2026-09-07)**: FastAPI 웹앱(Render 배포) + Notion/카카오 OAuth + Google 로그인 + GitHub Actions 백업 트리거 — 기본 기능 완성
+- **현재 v2 (진행 중, 2026-09-07~)**: 발송 이력 대시보드 + 시각화/필터링/다크모드 고도화 → 최종 목표: Capacitor로 하이브리드 앱 패키징(iOS/Android)
  
 ---
 
-## v1 — 은퇴한 로컬 스크립트 버전
+## 구형 v1 — 은퇴한 로컬 스크립트 버전
 
-`notify.py`(메인) + `get_kakao_token.py`(최초 1회 카카오 인증) + `.env` + launchd(매일 08:00)로 구성됐었음. 이번 세션에서 실제 카카오톡 전송까지 성공적으로 검증한 뒤, v2로 전환하면서 launchd 등록 해제 + 스크립트/`.env` 삭제(백업은 `_v1_backup/`에 보관).
+`notify.py`(메인) + `get_kakao_token.py`(최초 1회 카카오 인증) + `.env` + launchd(매일 08:00)로 구성됐었음. 이번 세션에서 실제 카카오톡 전송까지 성공적으로 검증한 뒤, 웹앱 버전으로 전환하면서 launchd 등록 해제 + 스크립트/`.env` 삭제(백업은 `_v1_backup/`에 보관).
 
-v1 진행 중 겪은 이슈 (v2에는 해당 없음, 기록용):
+겪은 이슈 (기록용):
 - 카카오 앱의 "카카오톡 메시지 전송(talk_message)" 동의항목이 비활성 상태로 최초 인증을 해서 403 `insufficient scopes` 발생 → 콘솔에서 활성화 후 재인증으로 해결
 - launchd가 `~/Documents/...` 경로 접근 시 macOS TCC 권한에 막혀 `PermissionError` 발생 (터미널 직접 실행은 문제없었음, launchd 백그라운드 프로세스만 막힘)
 
 ---
 
-## v2 — FastAPI 웹앱 (진행 중)
+## v1 — FastAPI 웹앱 기본 구축 (완료, 2026-09-07)
 
 ### 아키텍처
 ```
@@ -86,23 +88,7 @@ Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발�
 ### 배포 중 겪은 이슈 (해결됨)
 - 실제로 env var 추가보다 코드 push가 먼저 나가서, 배포가 `KeyError: 'SESSION_SECRET_KEY'`로 실패함 (Render Environment 탭에 `REDIS_URL`만 있고 나머지 4개가 빠져 있었음). Render는 새 배포가 실패하면 이전 버전을 계속 서비스하기 때문에 겉으로는 "그냥 로그인 없이 옛날 화면이 계속 뜨는" 것처럼 보여서 원인 파악에 로그 확인이 필요했음. 4개 환경변수 모두 추가 후 재배포 성공, `/settings` 비로그인 접근 시 `/login`으로 리다이렉트되는 것까지 확인.
 
-## 현재 상태 (다음에 이어서 할 일)
-- [x] FastAPI 웹앱 코드 작성, GitHub push, Render 배포, 500 에러 수정 → `/settings` 정상 렌더링 확인됨
-- [x] Render Redis에 Notion 토큰/DB ID/속성명, 카카오 REST 키/시크릿 입력 완료 (2026-09-05, v1 `_v1_backup/.env` 값 재사용)
-- [x] 카카오 디벨로퍼스 콘솔에 Redirect URI `https://notion-kakao-schedule.onrender.com/kakao/callback` 등록 완료
-- [x] "카카오 연결" 버튼으로 배포 환경에서 OAuth 재인증 완료 (연결 상태 ✅ 확인)
-- [x] "지금 테스트 전송"으로 배포 환경 end-to-end 검증 완료 (2026-09-05 14:30 성공, Notion 일정 정상 수신)
-- [x] UptimeRobot으로 5분 간격 핑 설정 완료 (2026-09-05, `notion-kakao-schedule.onrender.com` 모니터링 중)
-- [x] 알림 시각 08:00 자동 발송이 실제로 되는지 하루 지켜보고 확인
-- [x] `/settings` 등 전체 라우트가 무인증 상태였던 것 발견, Google 로그인(허용 이메일 1개 게이트) 코드 작성 완료 (2026-09-06)
-- [x] Google Cloud Console에서 OAuth 클라이언트 생성 + 테스트 사용자(`koreajimin@gmail.com`) 등록 완료
-- [x] Render에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`ALLOWED_GOOGLE_EMAIL`/`SESSION_SECRET_KEY` 추가 완료 (1차 시도 때 `SESSION_SECRET_KEY` 누락으로 배포 실패 → 재추가 후 해결, 위 "배포 중 겪은 이슈" 참고)
-- [x] 재배포 성공 확인 (`/settings` 비로그인 접근 시 `/login`으로 리다이렉트되는 것 확인, 2026-09-06)
-- [x] 실제로 `koreajimin@gmail.com` 계정으로 로그인해서 `/settings` 정상 진입되는지 최종 확인 완료 (2026-09-06)
-- [x] 발송 실패 백업 트리거 코드 작성 + 배포 완료 (2026-09-07)
-- [x] Render/GitHub Actions에 `CRON_SECRET` 등록 완료, `daily-notify-backup.yml` 최소 1회 정상 동작(성공 또는 no-op) 확인 완료 (2026-09-07)
-
-## 발송 실패 안전망 (GitHub Actions 백업 트리거, 2026-09-07 추가)
+## 발송 실패 안전망 (GitHub Actions 백업 트리거, 2026-09-07)
 
 기존엔 발송 실패가 `last_sent_status`에 기록만 되고(`app/db.py`), `/settings`에 직접 들어가야만 알 수 있었음(능동 알림 없음). 새 서비스/인프라 추가 없이 **GitHub Actions의 기본 "스케줄 워크플로우 실패 시 이메일" 기능**을 그대로 활용해 해결.
 
@@ -118,34 +104,67 @@ Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발�
 
 Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1회 정상 동작(성공 또는 no-op)하는 것까지 확인함. 이후 08:10 KST 실행에서 실패가 나면 저장소 소유자 이메일로 통보되는 구조가 실전 배포됨.
 
-## 진행 완료
-
-### 대시보드 추가 (2026-09-07 완료)
-**목표**: 발송 이력 및 현황을 한눈에 볼 수 있는 대시보드 페이지 추가 ✅
-
-**구현 완료**:
-1. **Redis 발송 기록 저장** (`app/db.py`) ✅
-   - `add_send_history()`, `get_send_history()`, `get_send_statistics()` 함수 추가
-   - 최근 100개 기록 유지, 각 기록: `{"timestamp", "status", "source", "message"}`
-   
-2. **발송 시 기록 저장** (`app/scheduler.py`) ✅
-   - `run_daily_job(source)` 파라미터 추가, 성공/실패 모두 기록
-   - 발송 출처: "scheduler" (08:00 자동), "backup" (GitHub Actions), "manual" (테스트)
-
-3. **API 엔드포인트** (`app/main.py`) ✅
-   - `GET /api/send-history` → 최근 30개 기록 + 통계 JSON 반환
-   - `GET /dashboard` → 대시보드 HTML 페이지 (로그인 필수)
-
-4. **UI** (`app/templates/dashboard.html`) ✅
-   - 요약: 전체 성공률, 7일 성공률, 발송 출처별 카운트
-   - 이력 테이블: 날짜/시간, 상태 배지, 출처 배지, 에러 메시지
-   - 반응형 디자인, settings.html 통합 네비게이션
-
-**커밋**: `fc4d43f` (2026-09-07)
+### v1 완료 체크리스트 (2026-09-07 기준)
+- [x] FastAPI 웹앱 기본 구축 (라우트, Redis 연동, settings 페이지)
+- [x] Notion API 연동 (일정 조회, 메시지 포맷팅)
+- [x] 카카오 OAuth (refresh token 관리, 토큰 갱신)
+- [x] APScheduler 자동 발송 (KST 08:00, reschedule 지원)
+- [x] UptimeRobot 모니터링 (5분 간격 핑으로 Render spin-down 방지)
+- [x] Google OAuth 로그인 (허용 이메일 1개 게이트, SessionMiddleware 세션 관리)
+- [x] GitHub Actions 백업 트리거 (`/internal/run-daily` 엔드포인트, 발송 실패 시 이메일 자동 알림)
+- [x] 발송 기록 저장/조회 (Redis 리스트, `add_send_history()` 등)
 
 ---
 
-## 그다음 이어서 할 수 있는 작업 (v2 로드맵)
-- 자동 토큰 갱신 (토큰 만료 전 자동 재발급)
-- Google Calendar / Apple Calendar 등 캘린더 어댑터 추가
-- Capacitor로 하이브리드 앱 패키징 (iOS/Android)
+## v2 — 대시보드 추가 및 고도화 (진행 중, 2026-09-07~)
+
+### 현재 진행 중
+발송 이력 기본 대시보드 구현 중: Redis 기반 발송 기록 저장(`app/db.py`: `add_send_history()`, `get_send_history()`, `get_send_statistics()`), 스케줄러 연동(`app/scheduler.py`: `run_daily_job(source)` 파라미터 추가로 출처별 기록), API 엔드포인트(`app/main.py`: `/api/send-history`, `/dashboard`), 기본 UI(`app/templates/dashboard.html`: 성공률/7일 통계/이력 테이블/반응형 디자인). Redis에 최근 100개 기록 유지, 발송 출처("scheduler"/"backup"/"manual") 분류, 에러 메시지 기록 완료.
+
+### v2 로드맵 (대시보드 고도화)
+1. **시각화 강화**: Chart.js로 성공률 추이(일별 그래프), 시간대별 발송 분포(막대 차트), 출처별 비율(파이 차트) 추가
+2. **상세 통계**: 일별/주별/월별 집계, 가장 오래 지속된 발송 streak, 가장 최근 실패 원인 상위 5개
+3. **필터링 및 검색**: 날짜 범위 선택(캘린더), 상태별 필터(성공/실패/모두), 출처별 필터(자동/백업/수동/모두), 실시간 검색
+4. **상호작용성**: 에러 메시지 전체 보기(모달 팝업), 발송 기록 상세 조회, 마우스오버 시 통계값 하이라이트
+5. **다크모드**: 테마 토글 버튼, 시스템 설정 자동 감지, localStorage 저장
+6. **실시간 업데이트**: 새 발송 기록 추가 시 자동 새로고침(Server-Sent Events 또는 polling)
+
+---
+
+## 다중 캘린더 지원 (2026-09-07 시작)
+
+**목표**: Notion 외에 Google Calendar 등 여러 캘린더에서 일정을 가져와 하나의 메시지로 통합 발송
+
+**v1: Google Calendar 기본 지원**
+
+구현 계획:
+1. **Google Calendar API 클라이언트** (`app/google_calendar_client.py`)
+   - Google Calendar API 호출 (today's events)
+   - 기존 Google 로그인 OAuth와 동일한 클라이언트 ID/Secret 사용 (Calendar API scope 추가)
+   - 일정 포맷: `[Google] 일정명`
+
+2. **설정 저장소 확장** (`app/db.py`)
+   - `google_calendar_token` (Google Calendar OAuth 토큰)
+   - `calendar_sources` (활성화된 캘린더: notion, google 등)
+   - `calendar_merge_style` ("merge" 또는 "separate")
+
+3. **설정 페이지** (`app/templates/settings.html`)
+   - "Google Calendar 연결" 버튼 (별도 OAuth 플로우)
+   - 체크박스: Notion 사용 여부, Google Calendar 사용 여부
+   - 토큰 연결 상태 표시
+
+4. **일정 조회 통합** (`app/scheduler.py`)
+   - `run_daily_job()`에서 활성화된 모든 캘린더에서 일정 조회
+   - Notion + Google Calendar 일정을 하나의 메시지로 통합
+   - 출처별 라벨 표시: `[Notion]`, `[Google]`
+
+5. **API 엔드포인트** (`app/main.py`)
+   - `GET /google-calendar/connect` → Google Calendar OAuth 리다이렉트
+   - `GET /google-calendar/callback` → 토큰 저장
+
+**예상 소요**: ~2-3시간
+- Google Calendar 클라이언트: 30분
+- 설정 저장소 확장: 20분
+- 설정 페이지 UI: 30분
+- 발송 로직 통합: 30분
+- 테스트: 20분

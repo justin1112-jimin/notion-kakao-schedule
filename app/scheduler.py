@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app import db, kakao_client, notion_client
+from app import db, google_calendar_client, kakao_client, notion_client
 
 KST = ZoneInfo("Asia/Seoul")
 JOB_ID = "daily_notify"
@@ -17,13 +17,32 @@ def run_daily_job(source: str = "scheduler") -> str:
     settings = db.get_settings()
     now = datetime.now(KST).isoformat()
     try:
-        items = notion_client.get_today_schedule(
-            settings["notion_token"],
-            settings["notion_database_id"],
-            settings["notion_date_property"],
-            settings["notion_title_property"],
-        )
-        message = notion_client.format_message(items)
+        message_parts = []
+        calendar_sources = settings.get("calendar_sources", "notion").split(",")
+
+        if "notion" in calendar_sources:
+            items = notion_client.get_today_schedule(
+                settings["notion_token"],
+                settings["notion_database_id"],
+                settings["notion_date_property"],
+                settings["notion_title_property"],
+            )
+            notion_msg = notion_client.format_message(items)
+            if notion_msg:
+                message_parts.append(f"[Notion]\n{notion_msg}")
+
+        if "google" in calendar_sources and settings.get("google_calendar_refresh_token"):
+            tokens = google_calendar_client.refresh_access_token(
+                settings["google_calendar_refresh_token"]
+            )
+            events = google_calendar_client.get_today_events(tokens["access_token"])
+            google_msg = google_calendar_client.format_google_events(events)
+            if google_msg:
+                message_parts.append(f"[Google Calendar]\n{google_msg}")
+
+        message = "\n\n".join(message_parts)
+        if not message:
+            message = "오늘 일정이 없습니다."
 
         tokens = kakao_client.refresh_kakao_access_token(
             settings["kakao_rest_api_key"],
