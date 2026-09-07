@@ -31,11 +31,14 @@
   .header { position: relative; text-align: center; margin-bottom: 24px; }
   .header h1 { font-size: 21px; font-weight: 700; margin: 0 0 4px; }
   .header p { font-size: 13px; color: var(--muted); margin: 0; }
-  .logout-link {
-    position: absolute; top: 2px; right: 0; font-size: 12px; color: var(--muted);
+  .header-links {
+    position: absolute; top: 2px; right: 0; display: flex; gap: 8px;
+  }
+  .header-links a {
+    font-size: 12px; color: var(--muted);
     text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px;
   }
-  .logout-link:hover { background: #f3f4f6; }
+  .header-links a:hover { background: #f3f4f6; }
 
   .card {
     background: var(--card);
@@ -121,7 +124,10 @@
 <div class="page">
 
   <div class="header">
-    <a class="logout-link" href="/logout">로그아웃</a>
+    <div class="header-links">
+      <a href="/dashboard">📊 이력</a>
+      <a href="/logout">로그아웃</a>
+    </div>
     <h1>📅 Notion → 카카오 일정 알림</h1>
     <p>매일 아침, 오늘의 Notion 일정을 카카오톡으로 받아보세요</p>
   </div>

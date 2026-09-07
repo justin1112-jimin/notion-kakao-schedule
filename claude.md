@@ -98,7 +98,9 @@ Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발�
 - [x] Google Cloud Console에서 OAuth 클라이언트 생성 + 테스트 사용자(`koreajimin@gmail.com`) 등록 완료
 - [x] Render에 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`ALLOWED_GOOGLE_EMAIL`/`SESSION_SECRET_KEY` 추가 완료 (1차 시도 때 `SESSION_SECRET_KEY` 누락으로 배포 실패 → 재추가 후 해결, 위 "배포 중 겪은 이슈" 참고)
 - [x] 재배포 성공 확인 (`/settings` 비로그인 접근 시 `/login`으로 리다이렉트되는 것 확인, 2026-09-06)
-- [ ] 실제로 `koreajimin@gmail.com` 계정으로 로그인해서 `/settings` 정상 진입되는지 최종 확인
+- [x] 실제로 `koreajimin@gmail.com` 계정으로 로그인해서 `/settings` 정상 진입되는지 최종 확인 완료 (2026-09-06)
+- [x] 발송 실패 백업 트리거 코드 작성 + 배포 완료 (2026-09-07)
+- [x] Render/GitHub Actions에 `CRON_SECRET` 등록 완료, `daily-notify-backup.yml` 최소 1회 정상 동작(성공 또는 no-op) 확인 완료 (2026-09-07)
 
 ## 발송 실패 안전망 (GitHub Actions 백업 트리거, 2026-09-07 추가)
 
@@ -108,15 +110,40 @@ Render 환경변수 4개를 먼저 추가(저장 시 자동 재배포 1회 발�
 - `.github/workflows/daily-notify-backup.yml`: 매일 08:10 KST(=23:10 UTC)에 위 엔드포인트를 호출. 앱 내부 APScheduler(08:00 KST)가 이미 정상 발송했으면 조용히 넘어가고, 못 보냈으면 여기서 재시도 + 실패 시 GitHub Actions 워크플로우 자체가 실패 처리되어 **저장소 소유자에게 자동으로 실패 이메일 발송** (별도 SMTP/이메일 서비스 구축 없음).
 - 자동 복구(토큰 자동 재발급 등)는 만들지 않음 — 사람이 이메일 받고 원인(Notion 토큰 만료/카카오 재인증 필요/일시적 오류 등)에 맞게 수동 조치. 스케일이 커지면 자동 복구를 고려하기로 함.
 
-### 필요한 신규 환경변수/시크릿
+### 신규 환경변수/시크릿 (등록 완료, 2026-09-07)
 | 위치 | 이름 | 값 |
 |---|---|---|
 | Render | `CRON_SECRET` | 임의의 랜덤 문자열 (한 번 생성해서 고정) |
 | GitHub 저장소 Settings → Secrets and variables → Actions | `CRON_SECRET` | Render와 동일한 값 |
 
-### 배포 순서 주의
-기존 패턴과 동일하게, Render에 `CRON_SECRET` 환경변수를 먼저 추가(재배포 1회 발생, 코드는 아직 이전 버전이라 무해함) → 그 다음 이 코드를 git push. GitHub 저장소 시크릿은 push 전후 아무때나 추가해도 무방(워크플로우가 실제 스케줄로 실행되는 시점에만 필요).
+Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1회 정상 동작(성공 또는 no-op)하는 것까지 확인함. 이후 08:10 KST 실행에서 실패가 나면 저장소 소유자 이메일로 통보되는 구조가 실전 배포됨.
+
+## 진행 중인 작업
+
+### 대시보드 추가 (2026-09-07 시작)
+**목표**: 발송 이력 및 현황을 한눈에 볼 수 있는 대시보드 페이지 추가
+
+**구현 계획**:
+1. **Redis 발송 기록 저장** (`app/db.py`)
+   - `send_history:{timestamp}` 형태로 최근 100개 기록 유지
+   - 각 기록: `{"timestamp", "status", "source", "message"}`
+   
+2. **발송 시 기록 저장** (`app/scheduler.py`, `app/kakao_client.py`)
+   - `run_daily_job()`, 테스트 전송, 백업 트리거 모두 동일한 함수로 기록
+
+3. **API 엔드포인트** (`app/main.py`)
+   - `GET /api/send-history` → 최근 30개 기록 + 통계 (성공률, 일주일 집계)
+   - `/dashboard` → 대시보드 HTML 페이지 (로그인 필수)
+
+4. **UI** (`app/templates/dashboard.html`)
+   - 요약: 최근 7일 성공률, 자동/백업/수동 발송 카운트
+   - 이력 테이블: 날짜, 상태, 발송 출처, 에러 메시지
+
+**예상 소요 시간**: ~1시간 (Redis 저장 15분 + API 20분 + UI 30분)
+
+---
 
 ## 그다음 이어서 할 수 있는 작업 (v2 로드맵)
-- Capacitor로 하이브리드 앱 패키징 (iOS/Android)
+- 자동 토큰 갱신 (토큰 만료 전 자동 재발급)
 - Google Calendar / Apple Calendar 등 캘린더 어댑터 추가
+- Capacitor로 하이브리드 앱 패키징 (iOS/Android)

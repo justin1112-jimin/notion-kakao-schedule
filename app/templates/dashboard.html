@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>발송 이력 — Notion → 카카오 일정 알림</title>
+<style>
+  :root {
+    --bg: #eef0f4;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-soft: #eef2ff;
+    --ok-bg: #ecfdf3; --ok-fg: #067647; --ok-border: #abefc6;
+    --bad-bg: #fef3f2; --bad-fg: #b42318; --bad-border: #fecdca;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 40px 16px 80px;
+    line-height: 1.4;
+  }
+  .page { max-width: 720px; margin: 0 auto; }
+  .header { position: relative; text-align: center; margin-bottom: 24px; }
+  .header h1 { font-size: 21px; font-weight: 700; margin: 0 0 4px; }
+  .header p { font-size: 13px; color: var(--muted); margin: 0; }
+  .nav {
+    display: flex; gap: 12px; justify-content: center; margin-top: 12px;
+  }
+  .nav a {
+    font-size: 12px; padding: 6px 12px; border-radius: 6px;
+    color: var(--text); text-decoration: none;
+    border: 1px solid var(--border);
+  }
+  .nav a.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .nav a:hover { background: #f3f4f6; }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06);
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
+  }
+  .stat-box {
+    background: var(--accent-soft); border: 1px solid #c7d2fe; border-radius: 8px;
+    padding: 16px; text-align: center;
+  }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 24px; font-weight: 700; margin: 6px 0 0; color: var(--accent); }
+  .stat-subtext { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .table-container {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%; font-size: 13px; border-collapse: collapse;
+  }
+  thead { background: #f9fafb; }
+  th {
+    padding: 12px; text-align: left; font-weight: 600; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px; border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 4px 8px; border-radius: 4px;
+  }
+  .badge-success { background: var(--ok-bg); color: var(--ok-fg); }
+  .badge-failed { background: var(--bad-bg); color: var(--bad-fg); }
+  .badge-scheduler { background: #dbeafe; color: #0c4a6e; }
+  .badge-backup { background: #fed7aa; color: #7c2d12; }
+  .badge-manual { background: #e9d5ff; color: #6b21a8; }
+
+  .error-text { color: var(--bad-fg); font-size: 12px; }
+  .no-data { text-align: center; color: var(--muted); padding: 40px 20px; }
+
+  @media (max-width: 480px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    table { font-size: 12px; }
+    th, td { padding: 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <h1>📊 발송 이력</h1>
+    <p>Notion → 카카오톡 일정 알림</p>
+    <div class="nav">
+      <a href="/settings">⚙️ 설정</a>
+      <a href="/dashboard" class="active">📊 이력</a>
+      <a href="/logout">로그아웃</a>
+    </div>
+  </div>
+
+  {% if statistics %}
+  <div class="card">
+    <h2 style="margin-top: 0; font-size: 16px;">최근 7일 통계</h2>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">성공률 (전체)</div>
+        <div class="stat-value">{{ statistics.success_rate }}</div>
+        <div class="stat-subtext">{{ statistics.success_count }}/{{ statistics.total }}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">성공률 (7일)</div>
+        <div class="stat-value">{{ statistics.week_success_rate }}</div>
+        <div class="stat-subtext">{{ statistics.week_success }}/{{ statistics.week_total }}</div>
+      </div>
+    </div>
+    {% if statistics.source_count %}
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+      <div style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">발송 출처별 횟수</div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        {% if statistics.source_count.scheduler %}
+        <div style="font-size: 12px;"><span class="badge badge-scheduler">자동</span> {{ statistics.source_count.scheduler }}</div>
+        {% endif %}
+        {% if statistics.source_count.backup %}
+        <div style="font-size: 12px;"><span class="badge badge-backup">백업</span> {{ statistics.source_count.backup }}</div>
+        {% endif %}
+        {% if statistics.source_count.manual %}
+        <div style="font-size: 12px;"><span class="badge badge-manual">수동</span> {{ statistics.source_count.manual }}</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2 style="margin-top: 0; font-size: 16px;">발송 이력 (최근 30개)</h2>
+    {% if history %}
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>날짜/시간</th>
+            <th>상태</th>
+            <th>출처</th>
+            <th>메모</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in history %}
+          <tr>
+            <td>
+              {% set dt = record.timestamp[:19] %}
+              {{ dt }}
+            </td>
+            <td>
+              {% if record.status == "success" %}
+              <span class="badge badge-success">✓ 성공</span>
+              {% else %}
+              <span class="badge badge-failed">✗ 실패</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if record.source == "scheduler" %}
+              <span class="badge badge-scheduler">자동</span>
+              {% elif record.source == "backup" %}
+              <span class="badge badge-backup">백업</span>
+              {% elif record.source == "manual" %}
+              <span class="badge badge-manual">수동</span>
+              {% else %}
+              <span style="font-size: 12px; color: var(--muted);">{{ record.source }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if record.message %}
+              <span class="error-text" title="{{ record.message }}">
+                {{ record.message[:30] }}{% if record.message|length > 30 %}...{% endif %}
+              </span>
+              {% else %}
+              <span style="color: var(--muted); font-size: 12px;">-</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="no-data">
+      <p>아직 발송 이력이 없습니다.</p>
+      <p style="font-size: 12px;">설정에서 알림을 활성화하고 테스트를 실행하면 기록이 표시됩니다.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+</body>
+</html>

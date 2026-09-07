@@ -75,3 +75,72 @@ def update_kakao_refresh_token(token: str):
 def record_send_result(status: str, when: str):
     client = get_client()
     client.hset(KEY, mapping={"last_sent_status": status, "last_sent_at": when})
+
+
+def add_send_history(timestamp: str, status: str, source: str, message: str = ""):
+    """
+    Redis 리스트에 발송 기록 추가 (최근 100개만 유지)
+    status: "success" or "failed"
+    source: "scheduler" | "backup" | "manual"
+    """
+    import json
+    client = get_client()
+    history_key = "send_history"
+    record = json.dumps({
+        "timestamp": timestamp,
+        "status": status,
+        "source": source,
+        "message": message,
+    })
+    client.lpush(history_key, record)
+    client.ltrim(history_key, 0, 99)
+
+
+def get_send_history(limit: int = 30) -> list:
+    """최근 발송 이력 조회"""
+    import json
+    client = get_client()
+    history_key = "send_history"
+    raw_records = client.lrange(history_key, 0, limit - 1)
+    return [json.loads(r) for r in raw_records]
+
+
+def get_send_statistics() -> dict:
+    """발송 통계 조회"""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    history = get_send_history(limit=100)
+    KST = ZoneInfo("Asia/Seoul")
+    today = datetime.now(KST).date()
+    week_ago = today - timedelta(days=7)
+
+    total = len(history)
+    success_count = sum(1 for r in history if r["status"] == "success")
+    week_success = 0
+    week_total = 0
+
+    for record in history:
+        try:
+            record_date = datetime.fromisoformat(record["timestamp"]).astimezone(KST).date()
+            if record_date >= week_ago:
+                week_total += 1
+                if record["status"] == "success":
+                    week_success += 1
+        except:
+            pass
+
+    source_count = {}
+    for record in history:
+        source = record.get("source", "unknown")
+        source_count[source] = source_count.get(source, 0) + 1
+
+    return {
+        "total": total,
+        "success_count": success_count,
+        "success_rate": f"{(success_count / total * 100) if total > 0 else 0:.1f}%",
+        "week_success": week_success,
+        "week_total": week_total,
+        "week_success_rate": f"{(week_success / week_total * 100) if week_total > 0 else 0:.1f}%",
+        "source_count": source_count,
+    }

@@ -10,8 +10,12 @@ KST = ZoneInfo("Asia/Seoul")
 JOB_ID = "daily_notify"
 
 
-def run_daily_job() -> str:
+def run_daily_job(source: str = "scheduler") -> str:
+    """
+    source: "scheduler" | "backup" | "manual"
+    """
     settings = db.get_settings()
+    now = datetime.now(KST).isoformat()
     try:
         items = notion_client.get_today_schedule(
             settings["notion_token"],
@@ -31,10 +35,13 @@ def run_daily_job() -> str:
             db.update_kakao_refresh_token(new_refresh_token)
 
         kakao_client.send_kakao_memo(tokens["access_token"], message)
-        db.record_send_result("success", datetime.now(KST).isoformat())
+        db.record_send_result("success", now)
+        db.add_send_history(now, "success", source)
         return message
     except Exception as e:
-        db.record_send_result(f"error: {e}", datetime.now(KST).isoformat())
+        error_msg = str(e)
+        db.record_send_result(f"error: {error_msg}", now)
+        db.add_send_history(now, "failed", source, error_msg)
         raise
 
 

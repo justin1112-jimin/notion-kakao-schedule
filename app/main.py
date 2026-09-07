@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -163,10 +163,34 @@ async def preview(request: Request):
 @app.post("/test-send")
 async def test_send(request: Request):
     try:
-        message = scheduler.run_daily_job()
+        message = scheduler.run_daily_job(source="manual")
         return _render_settings(request, test_result=f"성공\n{message}")
     except Exception as e:
         return _render_settings(request, test_result=f"실패: {e}")
+
+
+@app.get("/api/send-history")
+async def api_send_history():
+    """발송 이력 및 통계 JSON 반환"""
+    history = db.get_send_history(limit=30)
+    stats = db.get_send_statistics()
+    return JSONResponse({
+        "history": history,
+        "statistics": stats,
+    })
+
+
+@app.get("/dashboard")
+async def dashboard(request: Request):
+    """발송 이력 대시보드"""
+    history = db.get_send_history(limit=30)
+    stats = db.get_send_statistics()
+    context = {
+        "request": request,
+        "history": history,
+        "statistics": stats,
+    }
+    return templates.TemplateResponse(request=request, name="dashboard.html", context=context)
 
 
 @app.get("/internal/run-daily")
@@ -179,7 +203,7 @@ async def internal_run_daily(request: Request):
         return PlainTextResponse("already sent today", status_code=200)
 
     try:
-        scheduler.run_daily_job()
+        scheduler.run_daily_job(source="backup")
         return PlainTextResponse("sent", status_code=200)
     except Exception as e:
         return PlainTextResponse(f"failed: {e}", status_code=500)
