@@ -10,11 +10,12 @@ KST = ZoneInfo("Asia/Seoul")
 JOB_ID = "daily_notify"
 
 
-def run_daily_job(source: str = "scheduler") -> str:
+def run_daily_job(user_id: str, source: str = "scheduler") -> str:
     """
+    user_id: 사용자 ID
     source: "scheduler" | "backup" | "manual"
     """
-    settings = db.get_settings()
+    settings = db.get_settings(user_id)
     now = datetime.now(KST).isoformat()
     try:
         message_parts = []
@@ -51,16 +52,16 @@ def run_daily_job(source: str = "scheduler") -> str:
         )
         new_refresh_token = tokens.get("refresh_token")
         if new_refresh_token:
-            db.update_kakao_refresh_token(new_refresh_token)
+            db.update_kakao_refresh_token(user_id, new_refresh_token)
 
         kakao_client.send_kakao_memo(tokens["access_token"], message)
-        db.record_send_result("success", now)
-        db.add_send_history(now, "success", source)
+        db.record_send_result(user_id, "success", now)
+        db.add_send_history(user_id, now, "success", source)
         return message
     except Exception as e:
         error_msg = str(e)
-        db.record_send_result(f"error: {error_msg}", now)
-        db.add_send_history(now, "failed", source, _sanitize_error(error_msg))
+        db.record_send_result(user_id, f"error: {error_msg}", now)
+        db.add_send_history(user_id, now, "failed", source, _sanitize_error(error_msg))
         raise
 
 
@@ -97,7 +98,9 @@ def reschedule(sched: BackgroundScheduler, hour: int, minute: int):
     sched.reschedule_job(JOB_ID, trigger=CronTrigger(hour=hour, minute=minute, timezone=KST))
 
 
-def already_sent_today(settings: dict) -> bool:
+def already_sent_today(user_id: str) -> bool:
+    """오늘 이미 성공 발송했는지 확인"""
+    settings = db.get_settings(user_id)
     if settings["last_sent_status"] != "success" or not settings["last_sent_at"]:
         return False
     last_sent = datetime.fromisoformat(settings["last_sent_at"])

@@ -20,7 +20,8 @@ def build_authorize_url(redirect_uri: str, state: str) -> str:
     return GOOGLE_AUTH_URL + "?" + urlencode(params)
 
 
-def fetch_email(redirect_uri: str, code: str) -> str:
+def fetch_user_info(redirect_uri: str, code: str) -> dict:
+    """Google OAuth 인증 후 사용자 정보 반환 (email, sub)"""
     data = {
         "client_id": os.environ["GOOGLE_CLIENT_ID"],
         "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
@@ -38,9 +39,13 @@ def fetch_email(redirect_uri: str, code: str) -> str:
         timeout=10,
     )
     userinfo_resp.raise_for_status()
-    return userinfo_resp.json()["email"]
+    info = userinfo_resp.json()
+    return {
+        "email": info.get("email"),
+        "user_id": info.get("sub"),  # Google unique user ID
+    }
 
 
-def is_allowed_email(email: str) -> bool:
-    allowed = os.environ["ALLOWED_GOOGLE_EMAIL"]
-    return email.strip().lower() == allowed.strip().lower()
+def fetch_email(redirect_uri: str, code: str) -> str:
+    """호환성 유지: fetch_user_info의 이메일만 반환"""
+    return fetch_user_info(redirect_uri, code)["email"]

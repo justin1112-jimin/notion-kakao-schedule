@@ -168,3 +168,40 @@ Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1
 - 설정 페이지 UI: 30분
 - 발송 로직 통합: 30분
 - 테스트: 20분
+
+---
+
+## 다중 사용자 지원 (2026-09-07 시작)
+
+**목표**: 현재는 개인용(1인)이지만, 나중에 공개할 때 여러 사용자가 각자의 일정을 관리할 수 있도록
+
+**v1: 사용자별 독립 설정**
+
+구현 계획:
+1. **Google 로그인 개방** (`app/auth.py`)
+   - `ALLOWED_GOOGLE_EMAIL` 제약 제거 (모든 Google 계정 허용)
+   - 대신 로그인 후 세션에 user_id 저장 (Google sub claim 사용)
+
+2. **Redis 사용자 격리** (`app/db.py`)
+   - 키 구조 변경: `settings` → `user:{user_id}:settings`
+   - 발송 이력도 사용자별로: `user:{user_id}:send_history`
+   - `get_user_id(request)` 헬퍼 함수로 세션에서 user_id 추출
+
+3. **마이그레이션** (선택사항)
+   - 현재 개인 설정을 새 구조로 이관 (나중에 필요시)
+   - 기존 Redis key 유지하되, 관리자 계정에만 할당
+
+4. **라우트 수정** (`app/main.py`)
+   - 모든 라우트에서 `user_id` 연동
+   - 대시보드/설정/API 모두 사용자별로 필터링
+
+5. **세션/쿠키**
+   - 기존 `logged_in` 플래그 + `user_id` 저장
+   - 로그아웃 시 둘 다 초기화
+
+**예상 소요**: ~2-3시간
+- auth.py 수정: 20분
+- db.py 리팩토링: 45분
+- main.py 라우트 연동: 45분
+- 마이그레이션 로직: 20분
+- 테스트: 30분

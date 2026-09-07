@@ -40,6 +40,11 @@ async def require_login(request: Request, call_next):
 app.add_middleware(SessionMiddleware, secret_key=os.environ["SESSION_SECRET_KEY"])
 
 
+def _get_user_id(request: Request) -> str:
+    """세션에서 user_id 추출"""
+    return request.session.get("user_id")
+
+
 def _mask(value: str) -> str:
     if not value:
         return ""
@@ -47,7 +52,8 @@ def _mask(value: str) -> str:
 
 
 def _render_settings(request: Request, **extra):
-    settings = db.get_settings()
+    user_id = _get_user_id(request)
+    settings = db.get_settings(user_id)
     context = {
         "request": request,
         "settings": settings,
@@ -80,11 +86,11 @@ async def auth_callback(request: Request, code: str, state: str):
         return PlainTextResponse("잘못된 요청입니다. 다시 로그인해주세요.", status_code=400)
 
     redirect_uri = str(request.url_for("auth_callback"))
-    email = auth.fetch_email(redirect_uri, code)
-    if not auth.is_allowed_email(email):
-        return PlainTextResponse("접근 권한이 없는 계정입니다.", status_code=403)
+    user_info = auth.fetch_user_info(redirect_uri, code)
 
     request.session["logged_in"] = True
+    request.session["user_id"] = user_info["user_id"]
+    request.session["email"] = user_info["email"]
     return RedirectResponse("/settings")
 
 
@@ -111,8 +117,10 @@ async def save_settings(
     notify_hour: int = Form(...),
     notify_minute: int = Form(...),
 ):
-    current = db.get_settings()
+    user_id = _get_user_id(request)
+    current = db.get_settings(user_id)
     db.update_general_settings(
+        user_id=user_id,
         notion_token=notion_token or current["notion_token"],
         notion_database_id=notion_database_id,
         notion_date_property=notion_date_property,
@@ -128,7 +136,8 @@ async def save_settings(
 
 @app.get("/kakao/connect")
 async def kakao_connect(request: Request):
-    settings = db.get_settings()
+    user_id = _get_user_id(request)
+    settings = db.get_settings(user_id)
     redirect_uri = str(request.url_for("kakao_callback"))
     url = kakao_client.build_authorize_url(settings["kakao_rest_api_key"], redirect_uri)
     return RedirectResponse(url)
@@ -136,7 +145,8 @@ async def kakao_connect(request: Request):
 
 @app.get("/kakao/callback", name="kakao_callback")
 async def kakao_callback(request: Request, code: str):
-    settings = db.get_settings()
+    user_id = _get_user_id(request)
+    settings = db.get_settings(user_id)
     redirect_uri = str(request.url_for("kakao_callback"))
     tokens = kakao_client.exchange_code_for_tokens(
         settings["kakao_rest_api_key"],
@@ -144,7 +154,7 @@ async def kakao_callback(request: Request, code: str):
         redirect_uri,
         code,
     )
-    db.update_kakao_refresh_token(tokens["refresh_token"])
+    db.update_kakao_refresh_token(user_id, tokens["refresh_token"])
     return RedirectResponse("/settings?flash=kakao_connected", status_code=303)
 
 
@@ -162,20 +172,22 @@ async def google_calendar_callback(request: Request, code: str, state: str):
     if state != request.session.get("oauth_state_calendar"):
         return PlainTextResponse("잘못된 요청입니다.", status_code=400)
 
+    user_id = _get_user_id(request)
     redirect_uri = str(request.url_for("google_calendar_callback"))
     tokens = google_calendar_client.exchange_code_for_tokens(redirect_uri, code)
-    db.update_google_calendar_refresh_token(tokens["refresh_token"])
+    db.update_google_calendar_refresh_token(user_id, tokens["refresh_token"])
     # Google Calendar를 기본으로 활성화
-    current_sources = db.get_settings().get("calendar_sources", "notion")
+    current_sources = db.get_settings(user_id).get("calendar_sources", "notion")
     if "google" not in current_sources:
         new_sources = f"{current_sources},google" if current_sources else "google"
-        db.update_calendar_sources(new_sources)
+        db.update_calendar_sources(user_id, new_sources)
     return RedirectResponse("/settings?flash=google_calendar_connected", status_code=303)
 
 
 @app.post("/preview")
 async def preview(request: Request):
-    settings = db.get_settings()
+    user_id = _get_user_id(request)
+    settings = db.get_settings(user_id)
     items = notion_client.get_today_schedule(
         settings["notion_token"],
         settings["notion_database_id"],
@@ -188,8 +200,9 @@ async def preview(request: Request):
 
 @app.post("/test-send")
 async def test_send(request: Request):
+    user_id = _get_user_id(request)
     try:
-        message = scheduler.run_daily_job(source="manual")
+        message = scheduler.run_daily_job(user_id=user_id, source="manual")
         return _render_settings(request, test_result=f"성공\n{message}")
     except Exception as e:
         return _render_settings(request, test_result=f"실패: {e}")
@@ -201,8 +214,9 @@ async def api_send_history(request: Request):
     if not request.session.get("logged_in"):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
-    history = db.get_send_history(limit=30)
-    stats = db.get_send_statistics()
+    user_id = _get_user_id(request)
+    history = db.get_send_history(user_id, limit=30)
+    stats = db.get_send_statistics(user_id)
     return JSONResponse({
         "history": history,
         "statistics": stats,
@@ -212,8 +226,9 @@ async def api_send_history(request: Request):
 @app.get("/dashboard")
 async def dashboard(request: Request):
     """발송 이력 대시보드 (로그인 필수)"""
-    history = db.get_send_history(limit=30)
-    stats = db.get_send_statistics()
+    user_id = _get_user_id(request)
+    history = db.get_send_history(user_id, limit=30)
+    stats = db.get_send_statistics(user_id)
     context = {
         "request": request,
         "history": history,
@@ -227,12 +242,14 @@ async def internal_run_daily(request: Request):
     if request.headers.get("X-Cron-Secret") != os.environ["CRON_SECRET"]:
         return PlainTextResponse("unauthorized", status_code=401)
 
-    settings = db.get_settings()
-    if scheduler.already_sent_today(settings):
+    # 현재 개인용 (1인) — 관리자 user_id 사용 (향후 다중 사용자 지원 시 수정)
+    admin_user_id = os.environ.get("ADMIN_USER_ID", "default_user")
+
+    if scheduler.already_sent_today(admin_user_id):
         return PlainTextResponse("already sent today", status_code=200)
 
     try:
-        scheduler.run_daily_job(source="backup")
+        scheduler.run_daily_job(user_id=admin_user_id, source="backup")
         return PlainTextResponse("sent", status_code=200)
     except Exception as e:
         return PlainTextResponse(f"failed: {e}", status_code=500)

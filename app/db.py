@@ -2,7 +2,15 @@ import os
 
 import redis
 
-KEY = "settings"
+def _get_settings_key(user_id: str) -> str:
+    """사용자별 설정 키 생성"""
+    return f"user:{user_id}:settings"
+
+
+def _get_history_key(user_id: str) -> str:
+    """사용자별 발송 이력 키 생성"""
+    return f"user:{user_id}:send_history"
+
 
 DEFAULTS = {
     "notion_token": "",
@@ -27,14 +35,17 @@ def get_client() -> redis.Redis:
 
 
 def init_db():
-    client = get_client()
-    if not client.exists(KEY):
-        client.hset(KEY, mapping=DEFAULTS)
+    """호환성 유지 (사용 안 함)"""
+    pass
 
 
-def get_settings() -> dict:
+def get_settings(user_id: str) -> dict:
+    """사용자별 설정 조회"""
     client = get_client()
-    raw = client.hgetall(KEY)
+    key = _get_settings_key(user_id)
+    if not client.exists(key):
+        client.hset(key, mapping=DEFAULTS)
+    raw = client.hgetall(key)
     settings = {**DEFAULTS, **raw}
     settings["notify_hour"] = int(settings["notify_hour"])
     settings["notify_minute"] = int(settings["notify_minute"])
@@ -44,6 +55,7 @@ def get_settings() -> dict:
 
 
 def update_general_settings(
+    user_id: str,
     notion_token: str,
     notion_database_id: str,
     notion_date_property: str,
@@ -53,9 +65,11 @@ def update_general_settings(
     notify_hour: int,
     notify_minute: int,
 ):
+    """사용자별 일반 설정 저장"""
     client = get_client()
+    key = _get_settings_key(user_id)
     client.hset(
-        KEY,
+        key,
         mapping={
             "notion_token": notion_token,
             "notion_database_id": notion_database_id,
@@ -69,36 +83,41 @@ def update_general_settings(
     )
 
 
-def update_kakao_refresh_token(token: str):
+def update_kakao_refresh_token(user_id: str, token: str):
+    """사용자별 카카오 토큰 저장"""
     client = get_client()
-    client.hset(KEY, "kakao_refresh_token", token)
+    key = _get_settings_key(user_id)
+    client.hset(key, "kakao_refresh_token", token)
 
 
-def update_google_calendar_refresh_token(token: str):
+def update_google_calendar_refresh_token(user_id: str, token: str):
+    """사용자별 Google Calendar 토큰 저장"""
     client = get_client()
-    client.hset(KEY, "google_calendar_refresh_token", token)
+    key = _get_settings_key(user_id)
+    client.hset(key, "google_calendar_refresh_token", token)
 
 
-def update_calendar_sources(sources: str):
-    """활성화된 캘린더 소스 저장 (comma-separated: "notion" | "google" | "notion,google")"""
+def update_calendar_sources(user_id: str, sources: str):
+    """활성화된 캘린더 소스 저장"""
     client = get_client()
-    client.hset(KEY, "calendar_sources", sources)
+    key = _get_settings_key(user_id)
+    client.hset(key, "calendar_sources", sources)
 
 
-def record_send_result(status: str, when: str):
+def record_send_result(user_id: str, status: str, when: str):
+    """발송 결과 기록"""
     client = get_client()
-    client.hset(KEY, mapping={"last_sent_status": status, "last_sent_at": when})
+    key = _get_settings_key(user_id)
+    client.hset(key, mapping={"last_sent_status": status, "last_sent_at": when})
 
 
-def add_send_history(timestamp: str, status: str, source: str, message: str = ""):
+def add_send_history(user_id: str, timestamp: str, status: str, source: str, message: str = ""):
     """
-    Redis 리스트에 발송 기록 추가 (최근 100개만 유지)
-    status: "success" or "failed"
-    source: "scheduler" | "backup" | "manual"
+    사용자별 발송 기록 추가 (최근 100개만 유지)
     """
     import json
     client = get_client()
-    history_key = "send_history"
+    history_key = _get_history_key(user_id)
     record = json.dumps({
         "timestamp": timestamp,
         "status": status,
@@ -109,21 +128,21 @@ def add_send_history(timestamp: str, status: str, source: str, message: str = ""
     client.ltrim(history_key, 0, 99)
 
 
-def get_send_history(limit: int = 30) -> list:
-    """최근 발송 이력 조회"""
+def get_send_history(user_id: str, limit: int = 30) -> list:
+    """사용자별 발송 이력 조회"""
     import json
     client = get_client()
-    history_key = "send_history"
+    history_key = _get_history_key(user_id)
     raw_records = client.lrange(history_key, 0, limit - 1)
     return [json.loads(r) for r in raw_records]
 
 
-def get_send_statistics() -> dict:
-    """발송 통계 조회"""
+def get_send_statistics(user_id: str) -> dict:
+    """사용자별 발송 통계 조회"""
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
 
-    history = get_send_history(limit=100)
+    history = get_send_history(user_id, limit=100)
     KST = ZoneInfo("Asia/Seoul")
     today = datetime.now(KST).date()
     week_ago = today - timedelta(days=7)
