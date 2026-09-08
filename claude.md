@@ -278,3 +278,23 @@ Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1
 - 배포 후 카카오로 새로 로그인 → Notion 연결 → 알림 시각 재설정을 다시 한 번 해줘야 함
 - `/internal/run-daily`가 쓰는 `ADMIN_USER_ID` 환경변수(Render)도 새 카카오 `id` 값으로 갱신 필요 — 안 갱신하면 백업 트리거가 orphan된 옛 데이터를 계속 보게 됨. 새 카카오 `id`는 로그인 한 번 한 뒤 Redis에서 `user:*:settings` 키를 확인하거나, `/settings` 페이지에 표시되는 닉네임과 매칭해서 확인.
 - `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`은 신원 확인용으로는 더 이상 안 쓰이지만, Google Calendar 연동(`app/google_calendar_client.py`)에서 여전히 필요하므로 삭제하면 안 됨. `ALLOWED_GOOGLE_EMAIL`은 다중 사용자 지원 때 이미 미사용이 됐고 이번에도 그대로 미사용.
+
+---
+
+## 이번 세션에서 발견한 Gotchas (2026-09-09)
+
+**`settings.html`에 새 연결 버튼 추가 시 중첩 `<form>` 금지**: 기존 설정 저장용 `<form action="/settings">` 안에 다른 `<form>`을 넣으면 브라우저가 안쪽 여는 태그를 무시하고, 그 짝이 되는 닫는 태그가 바깥 폼을 조기 종료시켜버림 — Google Calendar "연결" 버튼이 실제로 이렇게 깨져 있었던 걸 발견해서 수정(Notion/카카오 연동 단순화 작업 중). 새 OAuth 연결 버튼은 항상 별도의 최상위 `<form>`으로 작성할 것.
+
+**새 OAuth 연동의 `os.environ["X"]`는 함수 내부(요청 시점)에서 읽을 것**: `main.py` import 시점이나 모듈 최상단에서 읽으면 그 환경변수 하나만 없어도 앱 전체가 부팅 실패함(`SESSION_SECRET_KEY`가 그 예 — `app.add_middleware(SessionMiddleware, secret_key=os.environ[...])`가 모듈 로드 시 바로 실행됨). `kakao_client.py`/`notion_client.py`처럼 각 함수 안에서 읽으면, 그 env var가 빠졌을 때 해당 라우트만 500이 나고 사이트 나머지는 정상 동작 — 새 연동 추가 시 이 패턴을 따를 것.
+
+**배포 후 검증은 curl로 직접**: Render API/CLI 접근 권한이 없어서, 배포 후엔 `/usr/bin/curl -s -o /dev/null -w "%{http_code}" <URL>`로 엔드포인트 상태 코드만 확인하는 방식으로 검증함(bare `curl`이 이 환경 셸에서 간헐적으로 PATH 문제로 안 잡혀서 절대경로 사용). 로그인 필요한 라우트가 미로그인 상태에서 302/307을 반환하면 정상이고, 500이면 문제(대개 최근 추가한 env var 누락).
+
+**배포 전 로컬 사전 점검(실제 Redis 없이 가능)**:
+```bash
+REDIS_URL=redis://localhost:6379 SESSION_SECRET_KEY=x GOOGLE_CLIENT_ID=x GOOGLE_CLIENT_SECRET=x \
+CRON_SECRET=x KAKAO_REST_API_KEY=x NOTION_CLIENT_ID=x NOTION_CLIENT_SECRET=x \
+  python3 -c "from app import main; print([r.path for r in main.app.routes if hasattr(r,'path')])"
+```
+import 에러나 라우트 등록 누락을 실제 인프라 없이 바로 잡을 수 있음. 템플릿 쪽은 `Jinja2Templates(directory='app/templates').get_template('settings.html').render(**mock_context)`로 목업 컨텍스트를 채워 렌더링해보면 Jinja 문법 오류를 배포 전에 잡을 수 있음(이번 세션에서 Notion 카드 재배치, 카카오 로그인 전환 때 실제로 이 방식으로 검증함).
+
+**CLAUDE.md에 코드 상태(줄 수 등 구체적 수치)를 적을 때는 실제로 파일을 열어 확인한 값만 쓸 것**: 2026-09-09에 다른 세션이 이 파일을 재구성하면서 "main.py 10544줄" 같은 완전히 허구인 줄 수와, 실제로 존재하지 않는 함수(`send_message`, `get_kakao_refresh_token` 등)를 쓰는 예제 코드를 남겨서 롤백한 적 있음. 검증 안 된 구체적 수치/코드 예제는 안 적느니만 못함 — 특히 파일 크기처럼 다음 커밋에 바로 stale해지는 정보는 애초에 문서화 가치가 낮음(`wc -l`로 언제든 즉시 확인 가능).
