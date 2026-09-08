@@ -17,8 +17,6 @@ DEFAULTS = {
     "notion_database_id": "",
     "notion_date_property": "날짜",
     "notion_title_property": "이름",
-    "kakao_rest_api_key": "",
-    "kakao_client_secret": "",
     "kakao_refresh_token": "",
     "notify_hour": "8",
     "notify_minute": "0",
@@ -54,31 +52,36 @@ def get_settings(user_id: str) -> dict:
     return settings
 
 
-def update_general_settings(
-    user_id: str,
-    notion_token: str,
-    notion_database_id: str,
-    notion_date_property: str,
-    notion_title_property: str,
-    kakao_rest_api_key: str,
-    kakao_client_secret: str,
-    notify_hour: int,
-    notify_minute: int,
-):
+def update_general_settings(user_id: str, notify_hour: int, notify_minute: int):
     """사용자별 일반 설정 저장"""
     client = get_client()
     key = _get_settings_key(user_id)
     client.hset(
         key,
         mapping={
-            "notion_token": notion_token,
-            "notion_database_id": notion_database_id,
-            "notion_date_property": notion_date_property,
-            "notion_title_property": notion_title_property,
-            "kakao_rest_api_key": kakao_rest_api_key,
-            "kakao_client_secret": kakao_client_secret,
             "notify_hour": str(notify_hour),
             "notify_minute": str(notify_minute),
+        },
+    )
+
+
+def update_notion_token(user_id: str, token: str):
+    """OAuth 인증 후 Notion 액세스 토큰 저장"""
+    client = get_client()
+    key = _get_settings_key(user_id)
+    client.hset(key, "notion_token", token)
+
+
+def update_notion_database(user_id: str, database_id: str, date_property: str, title_property: str):
+    """선택한 데이터베이스 및 자동 감지된 속성명 저장"""
+    client = get_client()
+    key = _get_settings_key(user_id)
+    client.hset(
+        key,
+        mapping={
+            "notion_database_id": database_id,
+            "notion_date_property": date_property,
+            "notion_title_property": title_property,
         },
     )
 

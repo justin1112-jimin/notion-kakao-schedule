@@ -136,59 +136,66 @@
   {% if flash == "saved" %}<div class="flash">✅ 설정이 저장되었습니다.</div>{% endif %}
   {% if flash == "kakao_connected" %}<div class="flash">✅ 카카오 연결이 완료되었습니다.</div>{% endif %}
   {% if flash == "google_calendar_connected" %}<div class="flash">✅ Google Calendar 연결이 완료되었습니다.</div>{% endif %}
+  {% if flash == "notion_connected" %}<div class="flash">✅ Notion 연결이 완료되었습니다.</div>{% endif %}
+  {% if flash == "notion_database_selected" %}<div class="flash">✅ 데이터베이스가 선택되었습니다.</div>{% endif %}
+  {% if flash == "notion_select_database" %}<div class="flash">✅ Notion 연결 완료 — 아래에서 사용할 데이터베이스를 선택해주세요.</div>{% endif %}
+  {% if flash == "notion_no_database" %}<div class="flash" style="background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad-fg);">⚠️ 공유된 데이터베이스가 없습니다. "Notion 연결"을 다시 눌러 최소 하나를 선택해주세요.</div>{% endif %}
+
+  <div class="card">
+    <fieldset>
+      <legend>Notion</legend>
+      <div class="status-line">
+        연결 상태:
+        {% if notion_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
+      </div>
+      <form action="/notion/connect" method="get" style="margin-top: 12px;">
+        <button type="submit" class="secondary">Notion {% if notion_connected %}다시 연결{% endif %}</button>
+      </form>
+      {% if notion_databases %}
+      <form action="/notion/select-database" method="post" style="margin-top: 12px;">
+        <label>사용할 데이터베이스</label>
+        <select name="database_id" style="width: 100%; padding: 10px 12px; margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: #fafafa; color: var(--text);">
+          {% for db_item in notion_databases %}
+          <option value="{{ db_item.id }}" {% if db_item.id == settings.notion_database_id %}selected{% endif %}>{{ db_item.title }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="secondary" style="margin-top: 12px;">이 데이터베이스 사용</button>
+      </form>
+      {% endif %}
+      {% if settings.notion_database_id %}
+      <p style="font-size: 12px; color: var(--muted); margin-top: 12px;">
+        자동 감지된 속성 — 날짜: {{ settings.notion_date_property }} / 제목: {{ settings.notion_title_property }}
+      </p>
+      {% endif %}
+    </fieldset>
+
+    <fieldset>
+      <legend>카카오</legend>
+      <div class="status-line">
+        연결 상태:
+        {% if kakao_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Google Calendar (선택)</legend>
+      <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">
+        Notion 외에 Google Calendar 일정도 함께 받아보세요
+      </p>
+      <div class="status-line">
+        연결 상태:
+        {% if google_calendar_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
+      </div>
+      {% if not google_calendar_connected %}
+      <form action="/google-calendar/connect" method="get" style="margin-top: 12px;">
+        <button type="submit" class="secondary">Google Calendar 연결</button>
+      </form>
+      {% endif %}
+    </fieldset>
+  </div>
 
   <div class="card">
     <form method="post" action="/settings">
-      <fieldset>
-        <legend>Notion</legend>
-        <label>Integration Token (비워두면 기존 값 유지, 현재: {{ notion_token_display or "미설정" }})</label>
-        <input type="password" name="notion_token" placeholder="secret_...">
-
-        <label>Database ID</label>
-        <input type="text" name="notion_database_id" value="{{ settings.notion_database_id }}" required>
-
-        <div class="row">
-          <div>
-            <label>날짜 속성명</label>
-            <input type="text" name="notion_date_property" value="{{ settings.notion_date_property }}" required>
-          </div>
-          <div>
-            <label>제목 속성명</label>
-            <input type="text" name="notion_title_property" value="{{ settings.notion_title_property }}" required>
-          </div>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>카카오</legend>
-        <label>REST API 키 (비워두면 기존 값 유지, 현재: {{ kakao_rest_api_key_display or "미설정" }})</label>
-        <input type="password" name="kakao_rest_api_key" placeholder="REST API 키">
-
-        <label>Client Secret (선택, 비워두면 기존 값 유지, 현재: {{ kakao_client_secret_display or "미설정" }})</label>
-        <input type="password" name="kakao_client_secret" placeholder="Client Secret">
-
-        <div class="status-line">
-          연결 상태:
-          {% if kakao_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Google Calendar (선택)</legend>
-        <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">
-          Notion 외에 Google Calendar 일정도 함께 받아보세요
-        </p>
-        <div class="status-line">
-          연결 상태:
-          {% if google_calendar_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
-        </div>
-        {% if not google_calendar_connected %}
-        <form action="/google-calendar/connect" method="get">
-          <button type="submit" class="secondary" style="margin-top: 12px;">Google Calendar 연결</button>
-        </form>
-        {% endif %}
-      </fieldset>
-
       <fieldset>
         <legend>알림 시각</legend>
         <div class="row">

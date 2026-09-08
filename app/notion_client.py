@@ -1,12 +1,89 @@
 from __future__ import annotations
 
+import base64
+import os
 from datetime import datetime
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import requests
 
 KST = ZoneInfo("Asia/Seoul")
 NOTION_API_VERSION = "2022-06-28"
+NOTION_OAUTH_AUTHORIZE_URL = "https://api.notion.com/v1/oauth/authorize"
+NOTION_OAUTH_TOKEN_URL = "https://api.notion.com/v1/oauth/token"
+
+
+def build_authorize_url(redirect_uri: str, state: str) -> str:
+    params = {
+        "client_id": os.environ["NOTION_CLIENT_ID"],
+        "response_type": "code",
+        "owner": "user",
+        "redirect_uri": redirect_uri,
+        "state": state,
+    }
+    return NOTION_OAUTH_AUTHORIZE_URL + "?" + urlencode(params)
+
+
+def exchange_code_for_token(redirect_uri: str, code: str) -> dict:
+    """authorization code를 (만료 없는) access token으로 교환"""
+    credentials = base64.b64encode(
+        f"{os.environ['NOTION_CLIENT_ID']}:{os.environ['NOTION_CLIENT_SECRET']}".encode()
+    ).decode()
+    resp = requests.post(
+        NOTION_OAUTH_TOKEN_URL,
+        headers={"Authorization": f"Basic {credentials}"},
+        json={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def list_shared_databases(notion_token: str) -> list[dict]:
+    """OAuth 동의 시 사용자가 공유한 데이터베이스 목록 (id, title) 조회"""
+    resp = requests.post(
+        "https://api.notion.com/v1/search",
+        headers={
+            "Authorization": f"Bearer {notion_token}",
+            "Notion-Version": NOTION_API_VERSION,
+            "Content-Type": "application/json",
+        },
+        json={"filter": {"property": "object", "value": "database"}},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    databases = []
+    for db in resp.json()["results"]:
+        title = "".join(p.get("plain_text", "") for p in db.get("title", []))
+        databases.append({"id": db["id"], "title": title or "(제목 없음)"})
+    return databases
+
+
+def detect_properties(notion_token: str, database_id: str) -> tuple[str, str]:
+    """데이터베이스 스키마에서 title/date 속성명을 타입 기준으로 자동 감지"""
+    resp = requests.get(
+        f"https://api.notion.com/v1/databases/{database_id}",
+        headers={
+            "Authorization": f"Bearer {notion_token}",
+            "Notion-Version": NOTION_API_VERSION,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    properties = resp.json()["properties"]
+
+    title_property = next(name for name, prop in properties.items() if prop["type"] == "title")
+    date_property = next(
+        (name for name, prop in properties.items() if prop["type"] == "date"), None
+    )
+    if not date_property:
+        raise ValueError("이 데이터베이스에는 날짜(date) 속성이 없습니다.")
+    return date_property, title_property
 
 
 def get_today_schedule(

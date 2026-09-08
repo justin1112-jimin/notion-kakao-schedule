@@ -200,3 +200,57 @@ Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1
 **남은 것 (후속 작업)**:
 - [ ] 로그인 페이지 UI (`app/templates/login.html`) — 지금은 `/login`이 버튼 없이 바로 Google로 리다이렉트됨
 - [ ] 기존 단일 사용자 데이터 마이그레이션 (필요시)
+
+---
+
+## 연동 단순화 — 카카오 키 공용화 (완료, 2026-09-08)
+
+**문제**: 다중 사용자 지원 이후에도 `/settings`에서 각 사용자가 **자기 소유 카카오 디벨로퍼스 앱**을 직접 만들어 REST API 키/Client Secret을 입력해야 했음. `talk_message`(나에게 보내기) 스코프는 앱 단위 권한이고, 실제로 사용자별로 달라야 하는 건 `kakao_refresh_token`뿐이라 이 요구는 불필요한 진입장벽이었음(Google Calendar 연동은 이미 공용 Google 클라이언트로 버튼 하나면 끝나는 것과 비대칭).
+
+**해결**: `kakao_rest_api_key`/`kakao_client_secret`을 사용자별 Redis 설정에서 제거하고, `app/kakao_client.py`가 `google_calendar_client.py`/`app/auth.py`와 동일한 패턴으로 `os.environ["KAKAO_REST_API_KEY"]`/`os.environ.get("KAKAO_CLIENT_SECRET", "")`를 내부에서 직접 읽도록 변경. 앱 소유자(나)의 카카오 앱 하나를 모든 사용자가 공유하고, 사용자는 `/kakao/connect` 버튼만 누르면 됨 — 카카오 디벨로퍼스 가입/앱 생성/키 발급 과정이 통째로 사라짐.
+
+- 변경 파일: `app/kakao_client.py`(env 직접 참조로 시그니처 단순화), `app/main.py`(`kakao_connect`/`kakao_callback`/`save_settings`/`_render_settings`에서 관련 파라미터 제거), `app/db.py`(`DEFAULTS`/`update_general_settings`에서 두 필드 제거), `app/scheduler.py`(`refresh_kakao_access_token(refresh_token)`만 호출), `app/templates/settings.html`(REST API 키/Client Secret 입력 필드 삭제, 연결 상태 배지만 유지)
+- 기존 Redis에 남아있는 사용자별 `kakao_rest_api_key`/`kakao_client_secret` 값은 더 이상 읽지 않음(무해하게 방치, 별도 마이그레이션 불필요)
+
+### 신규 환경변수 (Render, 배포 전 등록 필요)
+| 변수 | 값 |
+|---|---|
+| `KAKAO_REST_API_KEY` | 카카오 디벨로퍼스 콘솔에서 발급받은 본인 앱의 REST API 키 |
+| `KAKAO_CLIENT_SECRET` | (선택) 같은 앱의 Client Secret — 활성화해뒀다면 등록 |
+
+**배포 순서 주의**: 위 두 변수를 Render에 먼저 추가한 뒤 이 코드를 push할 것(Google 로그인 도입 때와 동일한 이유 — 코드가 먼저 나가면 `/kakao/connect` 접근 시 `KeyError: 'KAKAO_REST_API_KEY'`로 500 발생).
+
+**후속 후보**: Notion 쪽도 같은 문제(Integration Token 수동 발급/복사 + Database ID + 속성명 수동 입력)가 남아있음 — Notion 공개 OAuth 통합으로 전환하면 "연결" 버튼 + Notion 자체 페이지 선택 UI + 스키마 자동감지로 대체 가능하지만, Notion 개발자 포털에 새 OAuth 통합 등록이 필요한 더 큰 작업이라 아직 보류 중.
+
+---
+
+## 연동 단순화 — Notion OAuth 전환 (완료, 2026-09-08)
+
+**문제**: Notion 연동도 카카오와 같은 종류의 진입장벽이 있었음 — 사용자가 Notion "Internal Integration"을 직접 만들어 Token을 복사/붙여넣기하고, Database ID를 직접 찾아 붙여넣고, 날짜/제목 속성명을 데이터베이스와 **정확히 똑같이** 타이핑해야 했음(오타 나면 조용히 빈 일정으로 나옴).
+
+**조사 결과**: Notion Calendar(캘린더 클라이언트 앱) 자체는 외부 API가 없어 그대로 갖다 쓸 수 없었음. 대신 Notion이 2026-05-13 "Developer Platform 3.5"에서 OAuth 2.0 공개 통합을 정식 권장 경로로 밀고 있는 걸 확인([Notion 공식 발표](https://www.notion.com/blog/introducing-developer-platform)), 그리고 캘린더 뷰 데이터베이스는 date 속성이 최소 1개 필수([Notion 가이드](https://www.notion.com/help/guides/calendar-view-databases))라는 점에 착안 — 속성 **이름**이 아니라 **타입**으로 자동 감지하면 사용자가 속성명을 몰라도 됨.
+
+**해결**: Google 로그인/Google Calendar와 동일한 OAuth 패턴으로 전환.
+- `app/notion_client.py`: `build_authorize_url()`(OAuth 인가 URL), `exchange_code_for_token()`(code→access_token, Notion OAuth 토큰은 만료 없음/refresh 불필요), `list_shared_databases()`(`/v1/search`로 동의 화면에서 사용자가 공유한 DB만 조회), `detect_properties()`(`/v1/databases/{id}` 스키마에서 `type == "title"`/`type == "date"` 속성을 이름 무관하게 자동 탐지)
+- `app/main.py`: `/notion/connect`(인가 URL로 리다이렉트) → `/notion/callback`(토큰 저장, 공유된 DB가 정확히 1개면 속성까지 자동 완료, 여러 개면 `/settings`에서 고르게 flash) → `/notion/select-database`(POST, 고른 DB의 속성 자동 감지 후 저장)
+- `app/db.py`: `update_general_settings()`에서 Notion 필드 제거, `update_notion_token()`/`update_notion_database()`로 분리(카카오 리팩터와 동일 패턴)
+- `app/templates/settings.html`: Token/Database ID/속성명 입력 필드 전부 삭제. "Notion 연결" 버튼 + (공유된 DB가 있으면) 드롭다운으로 대체. 이 김에 Notion/카카오/Google Calendar 연결 UI를 일반 설정(`알림 시각`) `<form>` 밖으로 분리 — 기존엔 "Google Calendar 연결" 버튼이 바깥 설정 폼 **안에 중첩된 `<form>`** 이라 HTML 파싱 규칙상 중첩 `<form>` 태그가 무시되어 실제로는 바깥 설정 폼이 그 지점에서 조기 종료되는 잠재 버그였음(브라우저에서 그동안 우연히 별문제 없어 보였을 수 있지만 구조적으로 깨져 있었음) — 카드를 분리하며 함께 수정.
+
+### 신규 환경변수 (Render, 배포 전 등록 필요)
+| 변수 | 값 |
+|---|---|
+| `NOTION_CLIENT_ID` | Notion 개발자 포털에서 발급받은 OAuth 통합의 Client ID |
+| `NOTION_CLIENT_SECRET` | 같은 통합의 Client Secret |
+
+### Notion 개발자 포털 설정 순서 (배포 전 사람이 직접 해야 함)
+1. https://www.notion.so/my-integrations (또는 app.notion.com/developers) → 새 통합 생성
+2. 통합 유형을 **Public**(OAuth)으로 설정 — Internal이면 이 플로우가 동작하지 않음
+3. Capabilities에서 최소 "Read content" 권한 활성화
+4. Redirect URI에 `https://notion-kakao-schedule.onrender.com/notion/callback` 등록
+5. 발급된 Client ID/Secret을 위 환경변수에 입력
+
+**배포 순서 주의**: Google/카카오 때와 동일한 이유로, 위 두 환경변수를 Render에 먼저 추가한 뒤 코드를 push할 것(반대 순서면 `/notion/connect` 접근 시 `KeyError: 'NOTION_CLIENT_ID'`로 500 발생).
+
+**기존 설정과의 관계**: 기존에 수동으로 넣어뒀던 `notion_token`/`notion_database_id`/`notion_date_property`/`notion_title_property` 값은 그대로 Redis에 남아있고 `run_daily_job()`이 읽는 필드명도 동일해서 **재설정 없이 계속 동작**함. 새로 "Notion 연결"을 누르면 그 값들이 OAuth 흐름으로 덮어써짐.
+
+**남은 것**: 공유된 DB가 0개일 때 안내 문구는 있지만, DB 연결 해제(공유 취소) 후 재조회 실패 시의 에러 메시지가 다소 무성의함(`list_shared_databases` 실패 시 조용히 빈 목록) — 실사용하면서 문제되면 개선.

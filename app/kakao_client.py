@@ -1,12 +1,13 @@
 import json
+import os
 from urllib.parse import urlencode
 
 import requests
 
 
-def build_authorize_url(rest_api_key: str, redirect_uri: str) -> str:
+def build_authorize_url(redirect_uri: str) -> str:
     params = {
-        "client_id": rest_api_key,
+        "client_id": os.environ["KAKAO_REST_API_KEY"],
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": "talk_message",
@@ -14,13 +15,14 @@ def build_authorize_url(rest_api_key: str, redirect_uri: str) -> str:
     return "https://kauth.kakao.com/oauth/authorize?" + urlencode(params)
 
 
-def exchange_code_for_tokens(rest_api_key: str, client_secret: str, redirect_uri: str, code: str) -> dict:
+def exchange_code_for_tokens(redirect_uri: str, code: str) -> dict:
     data = {
         "grant_type": "authorization_code",
-        "client_id": rest_api_key,
+        "client_id": os.environ["KAKAO_REST_API_KEY"],
         "redirect_uri": redirect_uri,
         "code": code,
     }
+    client_secret = os.environ.get("KAKAO_CLIENT_SECRET", "")
     if client_secret:
         data["client_secret"] = client_secret
 
@@ -29,12 +31,13 @@ def exchange_code_for_tokens(rest_api_key: str, client_secret: str, redirect_uri
     return resp.json()
 
 
-def refresh_kakao_access_token(rest_api_key: str, refresh_token: str, client_secret: str) -> dict:
+def refresh_kakao_access_token(refresh_token: str) -> dict:
     data = {
         "grant_type": "refresh_token",
-        "client_id": rest_api_key,
+        "client_id": os.environ["KAKAO_REST_API_KEY"],
         "refresh_token": refresh_token,
     }
+    client_secret = os.environ.get("KAKAO_CLIENT_SECRET", "")
     if client_secret:
         data["client_secret"] = client_secret
 

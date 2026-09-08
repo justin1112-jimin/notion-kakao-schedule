@@ -49,22 +49,21 @@ def _get_user_id(request: Request) -> str:
     return request.session.get("user_id")
 
 
-def _mask(value: str) -> str:
-    if not value:
-        return ""
-    return f"****{value[-4:]}" if len(value) > 4 else "****"
-
-
 def _render_settings(request: Request, **extra):
     user_id = _get_user_id(request)
     settings = db.get_settings(user_id)
+    notion_databases = []
+    if settings["notion_token"]:
+        try:
+            notion_databases = notion_client.list_shared_databases(settings["notion_token"])
+        except Exception:
+            notion_databases = []
     context = {
         "request": request,
         "settings": settings,
         "user_email": request.session.get("email"),
-        "notion_token_display": _mask(settings["notion_token"]),
-        "kakao_rest_api_key_display": _mask(settings["kakao_rest_api_key"]),
-        "kakao_client_secret_display": _mask(settings["kakao_client_secret"]),
+        "notion_connected": bool(settings["notion_token"]),
+        "notion_databases": notion_databases,
         "kakao_connected": bool(settings["kakao_refresh_token"]),
         "google_calendar_connected": bool(settings["google_calendar_refresh_token"]),
         **extra,
@@ -120,52 +119,70 @@ async def settings_page(request: Request, flash: Optional[str] = None):
 @app.post("/settings")
 async def save_settings(
     request: Request,
-    notion_token: str = Form(""),
-    notion_database_id: str = Form(...),
-    notion_date_property: str = Form(...),
-    notion_title_property: str = Form(...),
-    kakao_rest_api_key: str = Form(""),
-    kakao_client_secret: str = Form(""),
     notify_hour: int = Form(...),
     notify_minute: int = Form(...),
 ):
     user_id = _get_user_id(request)
-    current = db.get_settings(user_id)
-    db.update_general_settings(
-        user_id=user_id,
-        notion_token=notion_token or current["notion_token"],
-        notion_database_id=notion_database_id,
-        notion_date_property=notion_date_property,
-        notion_title_property=notion_title_property,
-        kakao_rest_api_key=kakao_rest_api_key or current["kakao_rest_api_key"],
-        kakao_client_secret=kakao_client_secret or current["kakao_client_secret"],
-        notify_hour=notify_hour,
-        notify_minute=notify_minute,
-    )
+    db.update_general_settings(user_id=user_id, notify_hour=notify_hour, notify_minute=notify_minute)
     scheduler.reschedule(request.app.state.scheduler, notify_hour, notify_minute)
     return RedirectResponse("/settings?flash=saved", status_code=303)
 
 
-@app.get("/kakao/connect")
-async def kakao_connect(request: Request):
+@app.get("/notion/connect")
+async def notion_connect(request: Request):
+    state = secrets.token_urlsafe(16)
+    request.session["oauth_state_notion"] = state
+    redirect_uri = str(request.url_for("notion_callback"))
+    url = notion_client.build_authorize_url(redirect_uri, state)
+    return RedirectResponse(url)
+
+
+@app.get("/notion/callback", name="notion_callback")
+async def notion_callback(request: Request, code: str, state: str):
+    if state != request.session.get("oauth_state_notion"):
+        return PlainTextResponse("잘못된 요청입니다.", status_code=400)
+
+    user_id = _get_user_id(request)
+    redirect_uri = str(request.url_for("notion_callback"))
+    token_data = notion_client.exchange_code_for_token(redirect_uri, code)
+    db.update_notion_token(user_id, token_data["access_token"])
+
+    # 공유된 데이터베이스가 정확히 하나면 속성까지 자동으로 마저 선택
+    databases = notion_client.list_shared_databases(token_data["access_token"])
+    if len(databases) == 1:
+        date_property, title_property = notion_client.detect_properties(
+            token_data["access_token"], databases[0]["id"]
+        )
+        db.update_notion_database(user_id, databases[0]["id"], date_property, title_property)
+        return RedirectResponse("/settings?flash=notion_connected", status_code=303)
+    if not databases:
+        return RedirectResponse("/settings?flash=notion_no_database", status_code=303)
+    return RedirectResponse("/settings?flash=notion_select_database", status_code=303)
+
+
+@app.post("/notion/select-database")
+async def notion_select_database(request: Request, database_id: str = Form(...)):
     user_id = _get_user_id(request)
     settings = db.get_settings(user_id)
+    date_property, title_property = notion_client.detect_properties(
+        settings["notion_token"], database_id
+    )
+    db.update_notion_database(user_id, database_id, date_property, title_property)
+    return RedirectResponse("/settings?flash=notion_database_selected", status_code=303)
+
+
+@app.get("/kakao/connect")
+async def kakao_connect(request: Request):
     redirect_uri = str(request.url_for("kakao_callback"))
-    url = kakao_client.build_authorize_url(settings["kakao_rest_api_key"], redirect_uri)
+    url = kakao_client.build_authorize_url(redirect_uri)
     return RedirectResponse(url)
 
 
 @app.get("/kakao/callback", name="kakao_callback")
 async def kakao_callback(request: Request, code: str):
     user_id = _get_user_id(request)
-    settings = db.get_settings(user_id)
     redirect_uri = str(request.url_for("kakao_callback"))
-    tokens = kakao_client.exchange_code_for_tokens(
-        settings["kakao_rest_api_key"],
-        settings["kakao_client_secret"],
-        redirect_uri,
-        code,
-    )
+    tokens = kakao_client.exchange_code_for_tokens(redirect_uri, code)
     db.update_kakao_refresh_token(user_id, tokens["refresh_token"])
     return RedirectResponse("/settings?flash=kakao_connected", status_code=303)
 

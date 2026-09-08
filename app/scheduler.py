@@ -45,11 +45,7 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
         if not message:
             message = "오늘 일정이 없습니다."
 
-        tokens = kakao_client.refresh_kakao_access_token(
-            settings["kakao_rest_api_key"],
-            settings["kakao_refresh_token"],
-            settings["kakao_client_secret"],
-        )
+        tokens = kakao_client.refresh_kakao_access_token(settings["kakao_refresh_token"])
         new_refresh_token = tokens.get("refresh_token")
         if new_refresh_token:
             db.update_kakao_refresh_token(user_id, new_refresh_token)
