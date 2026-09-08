@@ -171,37 +171,32 @@ Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1
 
 ---
 
-## 다중 사용자 지원 (2026-09-07 시작)
+## 다중 사용자 지원 (2026-09-07 완료)
 
-**목표**: 현재는 개인용(1인)이지만, 나중에 공개할 때 여러 사용자가 각자의 일정을 관리할 수 있도록
+**목표**: 현재는 개인용(1인)이지만, 나중에 공개할 때 여러 사용자가 각자의 일정을 관리할 수 있도록 ✅
 
-**v1: 사용자별 독립 설정**
+**v1: 사용자별 독립 설정 (완료)**
 
-구현 계획:
-1. **Google 로그인 개방** (`app/auth.py`)
-   - `ALLOWED_GOOGLE_EMAIL` 제약 제거 (모든 Google 계정 허용)
-   - 대신 로그인 후 세션에 user_id 저장 (Google sub claim 사용)
+구현 완료:
+1. **Google 로그인 개방** (`app/auth.py`) ✅
+   - `ALLOWED_GOOGLE_EMAIL` 제약 제거, 모든 Google 계정 허용
+   - `fetch_user_info()`가 email + `user_id`(Google `sub` claim) 함께 반환
 
-2. **Redis 사용자 격리** (`app/db.py`)
-   - 키 구조 변경: `settings` → `user:{user_id}:settings`
-   - 발송 이력도 사용자별로: `user:{user_id}:send_history`
-   - `get_user_id(request)` 헬퍼 함수로 세션에서 user_id 추출
+2. **Redis 사용자 격리** (`app/db.py`) ✅
+   - 키 구조: `user:{user_id}:settings`, `user:{user_id}:send_history`
+   - 모든 조회/저장 함수가 `user_id`를 첫 인자로 받도록 변경
 
-3. **마이그레이션** (선택사항)
-   - 현재 개인 설정을 새 구조로 이관 (나중에 필요시)
-   - 기존 Redis key 유지하되, 관리자 계정에만 할당
+3. **라우트 연동** (`app/main.py`) ✅
+   - `_get_user_id(request)` 헬퍼로 세션에서 추출
+   - 설정/대시보드/API/카카오·구글캘린더 연결 전부 사용자별로 분리
 
-4. **라우트 수정** (`app/main.py`)
-   - 모든 라우트에서 `user_id` 연동
-   - 대시보드/설정/API 모두 사용자별로 필터링
+4. **세션** ✅
+   - `auth/callback`에서 `logged_in`, `user_id`, `email` 세션 저장
 
-5. **세션/쿠키**
-   - 기존 `logged_in` 플래그 + `user_id` 저장
-   - 로그아웃 시 둘 다 초기화
+5. **백업 트리거** (`/internal/run-daily`) — 임시 처리
+   - 아직 로그인 세션이 없는 GitHub Actions 컨텍스트라 `ADMIN_USER_ID` 환경변수(기본값 `"default_user"`)로 단일 사용자만 처리
+   - **다중 사용자가 실제로 늘어나면 모든 user_id를 순회하도록 수정 필요** (현재는 1인 운영이라 미뤄둠)
 
-**예상 소요**: ~2-3시간
-- auth.py 수정: 20분
-- db.py 리팩토링: 45분
-- main.py 라우트 연동: 45분
-- 마이그레이션 로직: 20분
-- 테스트: 30분
+**남은 것 (후속 작업)**:
+- [ ] 로그인 페이지 UI (`app/templates/login.html`) — 지금은 `/login`이 버튼 없이 바로 Google로 리다이렉트됨
+- [ ] 기존 단일 사용자 데이터 마이그레이션 (필요시)

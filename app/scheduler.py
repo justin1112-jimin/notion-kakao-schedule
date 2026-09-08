@@ -83,12 +83,13 @@ def _sanitize_error(error_msg: str) -> str:
     return "Request failed"
 
 
-def create_scheduler(settings: dict) -> BackgroundScheduler:
+def create_scheduler(user_id: str, settings: dict) -> BackgroundScheduler:
     sched = BackgroundScheduler(timezone=KST)
     sched.add_job(
         run_daily_job,
         CronTrigger(hour=settings["notify_hour"], minute=settings["notify_minute"], timezone=KST),
         id=JOB_ID,
+        kwargs={"user_id": user_id, "source": "scheduler"},
     )
     sched.start()
     return sched

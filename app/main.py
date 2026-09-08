@@ -14,13 +14,17 @@ templates = Jinja2Templates(directory="app/templates")
 
 # "/internal/run-daily" skips the login session check but enforces its own
 # secret-header check inside the handler (called by GitHub Actions, not a browser).
-PUBLIC_PATHS = {"/login", "/auth/callback", "/internal/run-daily"}
+PUBLIC_PATHS = {"/login", "/login/google", "/auth/callback", "/internal/run-daily"}
+
+# 현재 개인용(1인) 운영 — 앱 내부 스케줄러(APScheduler)는 이 사용자 기준으로만 동작.
+# 다중 사용자가 실제로 늘어나면 사용자별 스케줄 등록 방식으로 교체 필요.
+ADMIN_USER_ID = os.environ.get("ADMIN_USER_ID", "default_user")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db()
-    app.state.scheduler = scheduler.create_scheduler(db.get_settings())
+    settings = db.get_settings(ADMIN_USER_ID)
+    app.state.scheduler = scheduler.create_scheduler(ADMIN_USER_ID, settings)
     yield
     app.state.scheduler.shutdown()
 
@@ -57,6 +61,7 @@ def _render_settings(request: Request, **extra):
     context = {
         "request": request,
         "settings": settings,
+        "user_email": request.session.get("email"),
         "notion_token_display": _mask(settings["notion_token"]),
         "kakao_rest_api_key_display": _mask(settings["kakao_rest_api_key"]),
         "kakao_client_secret_display": _mask(settings["kakao_client_secret"]),
@@ -73,7 +78,14 @@ async def root():
 
 
 @app.get("/login")
-async def login(request: Request):
+async def login(request: Request, error: Optional[str] = None):
+    return templates.TemplateResponse(
+        request=request, name="login.html", context={"request": request, "error": error}
+    )
+
+
+@app.get("/login/google")
+async def login_google(request: Request):
     state = secrets.token_urlsafe(16)
     request.session["oauth_state"] = state
     redirect_uri = str(request.url_for("auth_callback"))
@@ -83,7 +95,7 @@ async def login(request: Request):
 @app.get("/auth/callback", name="auth_callback")
 async def auth_callback(request: Request, code: str, state: str):
     if state != request.session.get("oauth_state"):
-        return PlainTextResponse("잘못된 요청입니다. 다시 로그인해주세요.", status_code=400)
+        return RedirectResponse("/login?error=잘못된 요청입니다. 다시 로그인해주세요.")
 
     redirect_uri = str(request.url_for("auth_callback"))
     user_info = auth.fetch_user_info(redirect_uri, code)
@@ -242,14 +254,11 @@ async def internal_run_daily(request: Request):
     if request.headers.get("X-Cron-Secret") != os.environ["CRON_SECRET"]:
         return PlainTextResponse("unauthorized", status_code=401)
 
-    # 현재 개인용 (1인) — 관리자 user_id 사용 (향후 다중 사용자 지원 시 수정)
-    admin_user_id = os.environ.get("ADMIN_USER_ID", "default_user")
-
-    if scheduler.already_sent_today(admin_user_id):
+    if scheduler.already_sent_today(ADMIN_USER_ID):
         return PlainTextResponse("already sent today", status_code=200)
 
     try:
-        scheduler.run_daily_job(user_id=admin_user_id, source="backup")
+        scheduler.run_daily_job(user_id=ADMIN_USER_ID, source="backup")
         return PlainTextResponse("sent", status_code=200)
     except Exception as e:
         return PlainTextResponse(f"failed: {e}", status_code=500)

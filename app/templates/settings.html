@@ -130,6 +130,7 @@
     </div>
     <h1>📅 Notion → 카카오 일정 알림</h1>
     <p>매일 아침, 오늘의 Notion 일정을 카카오톡으로 받아보세요</p>
+    {% if user_email %}<p style="font-size: 11px; margin-top: 4px;">{{ user_email }}</p>{% endif %}
   </div>
 
   {% if flash == "saved" %}<div class="flash">✅ 설정이 저장되었습니다.</div>{% endif %}
