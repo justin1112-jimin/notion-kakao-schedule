@@ -7,7 +7,52 @@ Notion에서 **오늘 날짜의 일정**을 가져와, 매일 아침 **카카오
 - **구형 v1 (은퇴, `_v1_backup/`)**: 로컬 Python 스크립트 + macOS launchd
 - **현재 v1 (완료, 2026-09-07)**: FastAPI 웹앱(Render 배포) + Notion/카카오 OAuth + Google 로그인 + GitHub Actions 백업 트리거 — 기본 기능 완성
 - **현재 v2 (진행 중, 2026-09-07~)**: 발송 이력 대시보드 + 시각화/필터링/다크모드 고도화 → 최종 목표: Capacitor로 하이브리드 앱 패키징(iOS/Android)
- 
+
+---
+
+## 현재 상태 요약 (2026-09-09 기준 — 아래는 여기까지 오게 된 히스토리, 각 절은 그 시점 기준으로 정확함)
+
+이 문서는 개발 일지 형식이라 전체를 읽어야 지금 상태가 재구성됨. 급하면 이 절만 보면 됨.
+
+### 로컬 실행
+```bash
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+REDIS_URL=redis://localhost:6379 SESSION_SECRET_KEY=x \
+KAKAO_REST_API_KEY=x KAKAO_CLIENT_SECRET=x NOTION_CLIENT_ID=x NOTION_CLIENT_SECRET=x \
+GOOGLE_CLIENT_ID=x GOOGLE_CLIENT_SECRET=x \
+  uvicorn app.main:app --reload --port 8000
+```
+`http://localhost:8000` → `/login`으로 리다이렉트 → 카카오로 로그인 (자세한 설정 방법은 `README.md` 참고).
+
+### 인증/연동 방식 (지금)
+- **로그인 = 카카오 로그인 하나**. `talk_message` 동의를 함께 받아서 로그인이 곧 카카오 메시지 발송 연결(더 이상 별도의 "카카오 연결" 단계 없음)
+- **Notion**: OAuth 공개 통합. "Notion 연결" → 공유 DB 선택 → 날짜/제목 속성은 스키마 타입으로 자동 감지(수동 입력 없음)
+- **Google Calendar**: 선택 기능, 별도 OAuth 연결 버튼
+
+### 현재 파일 구성
+| 파일 | 역할 |
+|---|---|
+| `app/main.py` | FastAPI 앱, 전체 라우트 |
+| `app/db.py` | Redis 저장소, 키 구조 `user:{카카오 id}:*` |
+| `app/kakao_client.py` | 카카오 로그인 + 메시지 전송 |
+| `app/notion_client.py` | Notion OAuth + 일정 조회 (속성 자동 감지) |
+| `app/google_calendar_client.py` | Google Calendar OAuth + 일정 조회 |
+| `app/scheduler.py` | APScheduler, `run_daily_job(user_id, source)` |
+| `app/templates/login.html` | 로그인 페이지 (카카오) |
+| `app/templates/settings.html` | 설정 페이지 (Notion/카카오/Google Calendar 연결) |
+| `app/templates/dashboard.html` | 발송 이력 대시보드 |
+
+### 필요한 환경변수
+| 변수 | 용도 |
+|---|---|
+| `REDIS_URL` | Upstash Redis |
+| `SESSION_SECRET_KEY` | 세션 쿠키 서명 |
+| `KAKAO_REST_API_KEY` / `KAKAO_CLIENT_SECRET`(선택) | 카카오 로그인+메시지 (앱 공용, 사용자별 입력 불필요) |
+| `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` | Notion OAuth |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar OAuth (로그인용 아님) |
+| `CRON_SECRET` | GitHub Actions 백업 트리거 인증 |
+
 ---
 
 ## 구형 v1 — 은퇴한 로컬 스크립트 버전
@@ -37,7 +82,7 @@ Upstash Redis (설정/토큰 저장)          Notion 조회 → 메시지 포맷
 - **Render 무료 플랜의 spin-down 문제**: 일정 시간 요청이 없으면 서버가 잠들어서(spin down) 스케줄러도 같이 멈춤 → **UptimeRobot으로 5분마다 `/settings`를 핑**해서 항상 깨어있게 유지하는 방식으로 해결 예정 (별도 트리거 엔드포인트 없이, 그냥 서버를 안 재우는 방식).
 - **하이브리드 앱(Capacitor) 전제**: 네이티브(RN/Flutter/Swift/Kotlin)는 이 프로젝트 규모(설정 폼 몇 개)엔 과함. 지금 웹 UI를 그대로 만들어두면 나중에 Capacitor로 감싸기만 하면 앱이 되므로, 로컬/배포 단계에서 이미 그 다음 단계를 염두에 두고 설계함(redirect_uri를 요청 시점에 동적 계산, 설정을 DB에 저장 등).
 
-### 파일 구성
+### 파일 구성 (2026-09-07 시점 — 지금 기준은 위 "현재 상태 요약 > 현재 파일 구성" 참고)
 | 파일 | 역할 |
 |---|---|
 | `app/main.py` | FastAPI 앱, 전체 라우트 (설정/카카오 OAuth/미리보기/테스트전송) |

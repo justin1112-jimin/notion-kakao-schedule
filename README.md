@@ -1,19 +1,23 @@
 # Notion → 카카오톡 오늘 일정 알림
 
-Notion 데이터베이스에서 오늘 날짜의 일정을 가져와, 매일 아침 카카오톡 "나에게 보내기"로 요약해서 보내주는 개인용 자동화 도구입니다.
+Notion(과 선택적으로 Google Calendar)에서 오늘 날짜의 일정을 가져와, 매일 아침 카카오톡 "나에게 보내기"로 요약해서 보내주는 개인용 자동화 도구입니다.
 
-FastAPI 웹앱으로 만들어져 있어 브라우저에서 Notion/카카오 연동과 알림 시각을 설정합니다. 나중에 Capacitor로 감싸서 하이브리드 앱(iOS/Android)으로 배포하는 걸 목표로 설계되어 있습니다.
+FastAPI 웹앱으로 만들어져 있고, 카카오 로그인 하나로 신원 확인과 메시지 발송 동의를 동시에 처리합니다(로그인 = 카카오 연결). Notion/Google Calendar도 전부 OAuth 연결이라 API 키를 직접 복사-붙여넣기할 필요가 없습니다. 나중에 Capacitor로 감싸서 하이브리드 앱(iOS/Android)으로 배포하는 걸 목표로 설계되어 있습니다.
 
 ## 폴더 구성
 ```
 notion-kakao-schedule/
 ├── app/
-│   ├── main.py            # FastAPI 앱, 라우트
-│   ├── db.py               # Redis(Upstash) 설정 저장소
-│   ├── notion_client.py     # Notion 조회 + 메시지 포맷팅
-│   ├── kakao_client.py      # 카카오 OAuth + 메시지 전송
-│   ├── scheduler.py         # APScheduler 기반 매일 알림 스케줄러
-│   └── templates/settings.html
+│   ├── main.py                    # FastAPI 앱, 전체 라우트
+│   ├── db.py                      # Redis(Upstash) 저장소 (사용자별 설정/토큰/발송 이력)
+│   ├── notion_client.py           # Notion OAuth + 일정 조회 (date/title 속성 자동 감지)
+│   ├── kakao_client.py            # 카카오 로그인 + 메시지 전송
+│   ├── google_calendar_client.py  # Google Calendar OAuth + 일정 조회 (선택 기능)
+│   ├── scheduler.py                # APScheduler 기반 매일 알림 스케줄러
+│   └── templates/
+│       ├── login.html             # 로그인 페이지 (카카오)
+│       ├── settings.html          # 설정 페이지 (Notion/카카오/Google Calendar 연결)
+│       └── dashboard.html         # 발송 이력 대시보드
 ├── requirements.txt
 └── _v1_backup/               # (gitignore) v1 로컬 스크립트 백업, 배포엔 미포함
 ```
@@ -21,14 +25,16 @@ notion-kakao-schedule/
 ## 아키텍처
 
 ```
-브라우저 (설정 UI)
+브라우저
+      ↓
+   /login (카카오 로그인 = 카카오 연결)
       ↓
 FastAPI 웹서비스 (Render) ── 매일 지정 시각에 내부 스케줄러(APScheduler)가 실행
       ↓                                      ↓
-Upstash Redis (설정/토큰 저장)      Notion 조회 → 메시지 포맷 → 카카오 전송
+Upstash Redis (사용자별 설정/토큰 저장)   Notion + Google Calendar 조회 → 메시지 포맷 → 카카오 전송
 ```
 
-- 설정(Notion 토큰, 카카오 토큰, 알림 시각)은 `.env`가 아니라 **Redis**에 저장됩니다. Render 무료 웹서비스는 디스크가 임시(재배포 시 초기화)라서 별도 저장소가 필요합니다.
+- 설정(Notion/카카오/Google Calendar 토큰, 알림 시각)은 `.env`가 아니라 **Redis**에 저장됩니다. Render 무료 웹서비스는 디스크가 임시(재배포 시 초기화)라서 별도 저장소가 필요합니다.
 - 매일 알림 발송은 macOS launchd가 아니라 **앱 프로세스 내부 스케줄러**가 담당합니다. 즉 서버가 켜져 있어야 작동합니다.
 - Render 무료 플랜은 일정 시간 요청이 없으면 서버가 잠드는데(spin down), 이러면 스케줄러도 같이 멈춥니다. **UptimeRobot 같은 무료 핑 서비스로 5분마다 `/settings`를 호출**해서 항상 깨어있게 해줘야 합니다.
 
@@ -41,41 +47,72 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Upstash 등에서 발급받은 Redis 연결 URL을 환경변수로 넣고 실행합니다.
+아래 환경변수를 넣고 실행합니다 (전부 아래 "환경변수" 절 참고):
 ```bash
-REDIS_URL="rediss://default:비밀번호@호스트:포트" uvicorn app.main:app --reload --port 8000
+REDIS_URL="rediss://default:비밀번호@호스트:포트" \
+SESSION_SECRET_KEY="아무-랜덤-문자열" \
+KAKAO_REST_API_KEY="..." KAKAO_CLIENT_SECRET="..." \
+NOTION_CLIENT_ID="..." NOTION_CLIENT_SECRET="..." \
+GOOGLE_CLIENT_ID="..." GOOGLE_CLIENT_SECRET="..." \
+  uvicorn app.main:app --reload --port 8000
 ```
 
-브라우저에서 http://localhost:8000/settings 접속 → Notion/카카오 값 입력 → 저장.
+브라우저에서 http://localhost:8000 접속 → `/login`으로 자동 리다이렉트 → **카카오로 로그인** (로그인 자체가 카카오 메시지 발송 동의까지 포함) → `/settings`에서 Notion 연결.
 
-## Notion 연동 설정
+## 환경변수
 
-1. https://www.notion.so/my-integrations 에서 **New integration** 생성 → Internal Integration Token 복사
-2. 일정이 있는 Notion 데이터베이스 페이지 우측 상단 `•••` → **연결(Connections)** → 방금 만든 통합 추가 (빼먹으면 API가 데이터베이스를 못 읽습니다)
-3. 데이터베이스 URL에서 32자리 ID 복사
-4. 본인 데이터베이스의 실제 속성 이름(날짜 속성, 제목 속성)을 확인
-5. 이 값들을 `/settings` 페이지 폼에 입력 후 저장
+| 변수 | 용도 |
+|---|---|
+| `REDIS_URL` | Upstash Redis 연결 문자열 |
+| `SESSION_SECRET_KEY` | 세션 쿠키 서명용 랜덤 문자열 (한 번 생성 후 고정) |
+| `KAKAO_REST_API_KEY` | 카카오 로그인 + 메시지 전송용 앱 키 (앱 소유자가 한 번만 발급, 모든 사용자가 공유) |
+| `KAKAO_CLIENT_SECRET` | (선택) 같은 카카오 앱의 Client Secret |
+| `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` | Notion OAuth 공개 통합 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar 연동용 (로그인용 아님) |
+| `CRON_SECRET` | GitHub Actions 백업 트리거 인증 (배포 시에만 필요) |
 
-## 카카오 개발자 앱 설정
+## 카카오 개발자 앱 설정 (필수, 앱 소유자가 한 번만)
 
 1. https://developers.kakao.com → 애플리케이션 추가 → **앱 키 > REST API 키** 확인
 2. **제품 설정 > 카카오 로그인** 활성화
-3. **Redirect URI**에 앱이 실제로 떠 있는 주소 + `/kakao/callback` 추가
-   - 로컬: `http://localhost:8000/kakao/callback`
-   - 배포: `https://<render-서비스명>.onrender.com/kakao/callback`
-4. **동의항목**에서 "카카오톡 메시지 전송(talk_message)"을 선택 동의로 활성화
-   - 참고: 개인 개발자 계정은 별도 심사 없이 본인 카카오 계정으로 "나에게 보내기"를 바로 사용할 수 있습니다.
-5. `/settings` 페이지에 REST API 키 입력 후 저장 → **"카카오 연결"** 버튼으로 로그인/동의
+3. **Redirect URI**에 `/auth/kakao/callback` 등록
+   - 로컬: `http://localhost:8000/auth/kakao/callback`
+   - 배포: `https://<render-서비스명>.onrender.com/auth/kakao/callback`
+4. **동의항목**에서 "카카오톡 메시지 전송(talk_message)"을 **필수 동의**로 설정 (선택 동의로 두면 로그인은 되는데 메시지 발송 권한이 빠질 수 있음)
+5. REST API 키(및 필요 시 Client Secret)를 `KAKAO_REST_API_KEY`/`KAKAO_CLIENT_SECRET` 환경변수에 설정
+
+앱 하나만 만들면 됩니다 — 사용자는 그냥 `/login`에서 **"카카오로 로그인"** 버튼만 누르면 자동으로 메시지 발송 동의까지 끝납니다.
+
+## Notion 연동 설정 (필수, 앱 소유자가 한 번만)
+
+1. https://www.notion.so/my-integrations → 새 통합 생성
+2. 유형을 **Public (OAuth)**으로 설정 (Internal이면 안 됨)
+3. Capabilities에서 "Read content" 활성화
+4. Redirect URI에 `/notion/callback` 등록 (배포: `https://<render-서비스명>.onrender.com/notion/callback`)
+5. Client ID/Secret을 `NOTION_CLIENT_ID`/`NOTION_CLIENT_SECRET` 환경변수에 설정
+
+사용자는 `/settings`에서 **"Notion 연결"** 버튼을 누르고 Notion 자체 페이지 선택 화면에서 데이터베이스를 고르면 끝입니다. 날짜/제목 속성명은 스키마에서 타입 기준으로 자동 감지되므로 직접 입력할 필요가 없습니다.
+
+## Google Calendar 연동 설정 (선택)
+
+1. https://console.cloud.google.com/ → 프로젝트 생성 → OAuth 동의 화면 설정(User Type: 외부, 테스트 상태 유지)
+2. OAuth 클라이언트 ID(웹 애플리케이션) 생성, Redirect URI에 `/google-calendar/callback` 등록
+3. Google Calendar API 활성화
+4. Client ID/Secret을 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` 환경변수에 설정
+
+사용자는 `/settings`에서 "Google Calendar 연결" 버튼으로 선택적으로 추가할 수 있습니다.
 
 ## Render 배포
 
-1. GitHub에 이 저장소 push (private 권장 — 토큰은 코드에 없지만 개인용 도구라 공개할 이유 없음)
+1. GitHub에 이 저장소 push (private 권장)
 2. Render → New → **Web Service** → 이 저장소 연결
 3. Build Command: `pip install -r requirements.txt`
 4. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 5. Instance Type: Free
-6. Environment Variables에 `REDIS_URL` 추가 (Upstash Redis의 TCP 연결 URL, `rediss://...`)
+6. Environment Variables에 위 "환경변수" 절의 항목 **전부** 추가
 7. Deploy
+
+**순서 주의**: 환경변수를 먼저 추가(자동 재배포 1회 발생)한 뒤 코드를 push할 것 — 반대 순서면 env var가 없어서 해당 라우트가 `KeyError`로 500 납니다.
 
 ### Upstash Redis (무료, 만료 없음)
 
@@ -93,19 +130,23 @@ Render 무료 Postgres는 30일 후 만료되지만, Upstash Redis 무료 티어
 
 ## 사용법
 
-배포/로컬 실행 후 `/settings` 페이지에서:
-- **저장**: Notion/카카오 설정, 알림 시각 저장
-- **카카오 연결**: 카카오 OAuth 로그인/동의
+배포/로컬 실행 후:
+- **로그인**: `/login`에서 카카오로 로그인 (= 메시지 발송 동의까지 자동 완료)
+- **Notion 연결**: `/settings`에서 버튼 클릭 → 데이터베이스 선택 (속성 자동 감지)
+- **Google Calendar 연결**: `/settings`에서 선택적으로 추가
+- **저장**: 알림 시각 저장
 - **오늘 일정 미리보기**: 전송 없이 오늘 일정만 확인
 - **지금 테스트 전송**: 실제로 카카오톡 메시지 즉시 발송
+- **대시보드**: `/dashboard`에서 발송 이력/성공률 확인
 
 ## 참고 사항
 
 - 카카오 액세스 토큰은 6시간마다 만료되지만, 발송 시마다 refresh token으로 자동 갱신합니다.
 - 리프레시 토큰이 회전(rotate)되면 새 값이 자동으로 Redis에 저장됩니다.
 - v1(로컬 스크립트 + macOS launchd 버전)은 `_v1_backup/`에 보관되어 있으며 더 이상 사용하지 않습니다.
+- 여러 사용자가 각자 로그인해서 각자의 Notion/카카오/Google Calendar를 독립적으로 연결할 수 있습니다(Redis 키가 `user:{카카오 id}:*`로 격리됨).
 
 ## 다음 단계 (v2 로드맵)
 
+- 대시보드 시각화 강화 (Chart.js: 일별 그래프, 출처별 파이 차트 등)
 - Capacitor로 이 웹 UI를 감싸서 iOS/Android 하이브리드 앱으로 배포
-- Google Calendar / Apple Calendar 등 추가 캘린더 어댑터
