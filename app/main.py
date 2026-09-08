@@ -8,13 +8,13 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import auth, db, google_calendar_client, kakao_client, notion_client, scheduler
+from app import db, google_calendar_client, kakao_client, notion_client, scheduler
 
 templates = Jinja2Templates(directory="app/templates")
 
 # "/internal/run-daily" skips the login session check but enforces its own
 # secret-header check inside the handler (called by GitHub Actions, not a browser).
-PUBLIC_PATHS = {"/login", "/login/google", "/auth/callback", "/internal/run-daily"}
+PUBLIC_PATHS = {"/login", "/login/kakao", "/auth/kakao/callback", "/internal/run-daily"}
 
 # 현재 개인용(1인) 운영 — 앱 내부 스케줄러(APScheduler)는 이 사용자 기준으로만 동작.
 # 다중 사용자가 실제로 늘어나면 사용자별 스케줄 등록 방식으로 교체 필요.
@@ -61,7 +61,7 @@ def _render_settings(request: Request, **extra):
     context = {
         "request": request,
         "settings": settings,
-        "user_email": request.session.get("email"),
+        "nickname": request.session.get("nickname"),
         "notion_connected": bool(settings["notion_token"]),
         "notion_databases": notion_databases,
         "kakao_connected": bool(settings["kakao_refresh_token"]),
@@ -83,25 +83,28 @@ async def login(request: Request, error: Optional[str] = None):
     )
 
 
-@app.get("/login/google")
-async def login_google(request: Request):
+@app.get("/login/kakao")
+async def login_kakao(request: Request):
     state = secrets.token_urlsafe(16)
     request.session["oauth_state"] = state
-    redirect_uri = str(request.url_for("auth_callback"))
-    return RedirectResponse(auth.build_authorize_url(redirect_uri, state))
+    redirect_uri = str(request.url_for("kakao_login_callback"))
+    return RedirectResponse(kakao_client.build_authorize_url(redirect_uri, state))
 
 
-@app.get("/auth/callback", name="auth_callback")
-async def auth_callback(request: Request, code: str, state: str):
+@app.get("/auth/kakao/callback", name="kakao_login_callback")
+async def kakao_login_callback(request: Request, code: str, state: str):
     if state != request.session.get("oauth_state"):
         return RedirectResponse("/login?error=잘못된 요청입니다. 다시 로그인해주세요.")
 
-    redirect_uri = str(request.url_for("auth_callback"))
-    user_info = auth.fetch_user_info(redirect_uri, code)
+    redirect_uri = str(request.url_for("kakao_login_callback"))
+    tokens = kakao_client.exchange_code_for_tokens(redirect_uri, code)
+    user_info = kakao_client.fetch_user_info(tokens["access_token"])
 
     request.session["logged_in"] = True
     request.session["user_id"] = user_info["user_id"]
-    request.session["email"] = user_info["email"]
+    request.session["nickname"] = user_info["nickname"]
+    # 카카오 로그인 자체가 talk_message 동의를 포함하므로, 로그인 = 카카오 연결.
+    db.update_kakao_refresh_token(user_info["user_id"], tokens["refresh_token"])
     return RedirectResponse("/settings")
 
 
@@ -169,22 +172,6 @@ async def notion_select_database(request: Request, database_id: str = Form(...))
     )
     db.update_notion_database(user_id, database_id, date_property, title_property)
     return RedirectResponse("/settings?flash=notion_database_selected", status_code=303)
-
-
-@app.get("/kakao/connect")
-async def kakao_connect(request: Request):
-    redirect_uri = str(request.url_for("kakao_callback"))
-    url = kakao_client.build_authorize_url(redirect_uri)
-    return RedirectResponse(url)
-
-
-@app.get("/kakao/callback", name="kakao_callback")
-async def kakao_callback(request: Request, code: str):
-    user_id = _get_user_id(request)
-    redirect_uri = str(request.url_for("kakao_callback"))
-    tokens = kakao_client.exchange_code_for_tokens(redirect_uri, code)
-    db.update_kakao_refresh_token(user_id, tokens["refresh_token"])
-    return RedirectResponse("/settings?flash=kakao_connected", status_code=303)
 
 
 @app.get("/google-calendar/connect")

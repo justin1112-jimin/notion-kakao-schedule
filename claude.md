@@ -57,7 +57,7 @@ Upstash Redis (설정/토큰 저장)          Notion 조회 → 메시지 포맷
 
 ---
 
-## 인증 (Google 로그인, 2026-09-06 추가)
+## 인증 (Google 로그인, 2026-09-06 추가 — 2026-09-09 카카오 로그인으로 대체됨, 아래 [[카카오 로그인 전환]] 참고)
 
 `/settings` 등 모든 라우트가 로그인 없이 완전히 공개되어 있던 걸 발견 (URL만 알면 누구나 조회/수정/카카오 연결 하이재킹 가능). Google OAuth로 막되, 회원가입 없이 **허용된 이메일 1개만** 통과시키는 개인용 게이트로 구현.
 
@@ -254,3 +254,27 @@ Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1
 **기존 설정과의 관계**: 기존에 수동으로 넣어뒀던 `notion_token`/`notion_database_id`/`notion_date_property`/`notion_title_property` 값은 그대로 Redis에 남아있고 `run_daily_job()`이 읽는 필드명도 동일해서 **재설정 없이 계속 동작**함. 새로 "Notion 연결"을 누르면 그 값들이 OAuth 흐름으로 덮어써짐.
 
 **남은 것**: 공유된 DB가 0개일 때 안내 문구는 있지만, DB 연결 해제(공유 취소) 후 재조회 실패 시의 에러 메시지가 다소 무성의함(`list_shared_databases` 실패 시 조용히 빈 목록) — 실사용하면서 문제되면 개선.
+
+---
+
+## 카카오 로그인 전환 (완료, 2026-09-09)
+
+**배경**: 이 앱의 진짜 목적은 "오늘 일정을 카카오톡으로 받는 것"이지 Notion이 아님. 그런데 로그인은 Google, 메시지 발송 동의는 별도로 카카오 — 두 개의 독립된 OAuth 플로우를 사용자가 따로 거쳐야 했음. 카카오 로그인(`talk_message` 동의 포함)을 신원 확인 겸용으로 쓰면 **로그인 = 카카오 연결**이 되어 한 단계가 통째로 사라진다는 점에 착안해 전환.
+
+**해결**: `app/auth.py`(Google OAuth 신원 확인 모듈) 삭제, `app/kakao_client.py`에 로그인용 함수 추가.
+- `build_authorize_url(redirect_uri, state)`: scope에 `talk_message profile_nickname`을 함께 요청(CSRF 방지용 `state` 파라미터도 이제 필요 — 로그인 전에도 호출되므로)
+- `fetch_user_info(access_token)`: `/v2/user/me` 호출해 `id`(고유 식별자, 별도 동의 불필요)와 `nickname`(동의 시) 반환
+- `/login/kakao` → `/auth/kakao/callback`: code 교환 → `fetch_user_info` → 세션에 `user_id`=카카오 `id`, `nickname` 저장 **+ 그 자리에서 바로 `db.update_kakao_refresh_token()` 호출**. 기존의 독립적인 `/kakao/connect`, `/kakao/callback` 라우트는 삭제(로그인 흐름에 흡수됨)
+- `_render_settings()`의 `user_email` → `nickname`으로 교체, `settings.html`에서 "카카오 연결" 버튼 제거(로그인 시 자동 연결됨을 안내 문구로 대체)
+- `login.html`: Google 버튼 → 카카오 옐로(#FEE500) 버튼으로 교체
+
+**Kakao Developers 콘솔에서 확인 필요** (배포 전):
+- 동의항목에서 `talk_message`가 **필수 동의**로 설정돼 있어야 함(선택 동의면 로그인은 성공해도 메시지 발송 권한이 없는 상태로 세션이 만들어질 수 있음) — v1 때 이미 활성화했던 항목([구형 v1 섹션](#구형-v1--은퇴한-로컬-스크립트-버전) 참고)이라 이미 되어있을 가능성 높음, 재확인만
+- `profile_nickname`은 선택 동의로 둬도 무방(꺼져 있으면 닉네임 없이 "카카오 사용자"처럼 빈 표시, 기능엔 영향 없음)
+- Redirect URI에 `https://notion-kakao-schedule.onrender.com/auth/kakao/callback` 추가 등록 (기존 `/kakao/callback`은 더 이상 안 씀 — 지워도 되지만 안 지워도 무해함)
+
+**⚠️ 파괴적 변경 — 기존 세션/데이터 이전 필요**:
+- 세션의 `user_id`가 Google `sub`에서 카카오 `id`로 바뀌므로, 기존에 Google로 로그인해서 쌓아둔 Redis 데이터(`user:{old_google_sub}:settings` 등 — Notion 연결, Kakao refresh token, 알림 시각, 발송 이력)는 새 카카오 `id` 밑에서는 안 보임(데이터 자체는 안 지워지고 orphan 상태로 남음)
+- 배포 후 카카오로 새로 로그인 → Notion 연결 → 알림 시각 재설정을 다시 한 번 해줘야 함
+- `/internal/run-daily`가 쓰는 `ADMIN_USER_ID` 환경변수(Render)도 새 카카오 `id` 값으로 갱신 필요 — 안 갱신하면 백업 트리거가 orphan된 옛 데이터를 계속 보게 됨. 새 카카오 `id`는 로그인 한 번 한 뒤 Redis에서 `user:*:settings` 키를 확인하거나, `/settings` 페이지에 표시되는 닉네임과 매칭해서 확인.
+- `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`은 신원 확인용으로는 더 이상 안 쓰이지만, Google Calendar 연동(`app/google_calendar_client.py`)에서 여전히 필요하므로 삭제하면 안 됨. `ALLOWED_GOOGLE_EMAIL`은 다중 사용자 지원 때 이미 미사용이 됐고 이번에도 그대로 미사용.

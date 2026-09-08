@@ -15,7 +15,6 @@
     --accent-soft: #eef2ff;
     --ok-bg: #ecfdf3; --ok-fg: #067647; --ok-border: #abefc6;
     --bad-bg: #fef3f2; --bad-fg: #b42318; --bad-border: #fecdca;
-    --kakao: #fee500; --kakao-text: #3c1e1e;
     --radius: 14px;
   }
   * { box-sizing: border-box; }
@@ -99,7 +98,6 @@
   button.secondary {
     background: #fff; color: var(--text); border: 1px solid var(--border);
   }
-  button.kakao { background: var(--kakao); color: var(--kakao-text); border: 1px solid #f0d900; }
 
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
   .actions form { flex: 1; min-width: 140px; }
@@ -130,11 +128,10 @@
     </div>
     <h1>📅 Notion → 카카오 일정 알림</h1>
     <p>매일 아침, 오늘의 Notion 일정을 카카오톡으로 받아보세요</p>
-    {% if user_email %}<p style="font-size: 11px; margin-top: 4px;">{{ user_email }}</p>{% endif %}
+    {% if nickname %}<p style="font-size: 11px; margin-top: 4px;">{{ nickname }}</p>{% endif %}
   </div>
 
   {% if flash == "saved" %}<div class="flash">✅ 설정이 저장되었습니다.</div>{% endif %}
-  {% if flash == "kakao_connected" %}<div class="flash">✅ 카카오 연결이 완료되었습니다.</div>{% endif %}
   {% if flash == "google_calendar_connected" %}<div class="flash">✅ Google Calendar 연결이 완료되었습니다.</div>{% endif %}
   {% if flash == "notion_connected" %}<div class="flash">✅ Notion 연결이 완료되었습니다.</div>{% endif %}
   {% if flash == "notion_database_selected" %}<div class="flash">✅ 데이터베이스가 선택되었습니다.</div>{% endif %}
@@ -175,6 +172,11 @@
         연결 상태:
         {% if kakao_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
       </div>
+      {% if not kakao_connected %}
+      <p style="font-size: 12px; color: var(--muted); margin-top: 12px;">
+        카카오 로그인 시 자동으로 연결됩니다. 재연결이 필요하면 로그아웃 후 다시 로그인해주세요.
+      </p>
+      {% endif %}
     </fieldset>
 
     <fieldset>
@@ -215,9 +217,6 @@
   </div>
 
   <div class="actions">
-    <form method="get" action="/kakao/connect">
-      <button type="submit" class="kakao">카카오 연결{% if kakao_connected %} 다시하기{% endif %}</button>
-    </form>
     <form method="post" action="/preview">
       <button type="submit" class="secondary">오늘 일정 미리보기</button>
     </form>
