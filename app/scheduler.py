@@ -10,6 +10,10 @@ KST = ZoneInfo("Asia/Seoul")
 JOB_ID = "daily_notify"
 
 
+class NoCalendarConnectedError(Exception):
+    pass
+
+
 def run_daily_job(user_id: str, source: str = "scheduler") -> str:
     """
     user_id: 사용자 ID
@@ -18,6 +22,11 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
     settings = db.get_settings(user_id)
     now = datetime.now(KST).isoformat()
     try:
+        if not settings.get("notion_token") and not settings.get("google_calendar_refresh_token"):
+            raise NoCalendarConnectedError(
+                "연결된 일정 서비스가 없습니다. Notion 또는 Google Calendar를 먼저 연결해주세요."
+            )
+
         message_parts = []
         calendar_sources = settings.get("calendar_sources", "notion").split(",")
 

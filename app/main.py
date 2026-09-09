@@ -220,6 +220,8 @@ async def test_send(request: Request):
     try:
         message = scheduler.run_daily_job(user_id=user_id, source="manual")
         return _render_settings(request, test_result=f"성공\n{message}")
+    except scheduler.NoCalendarConnectedError as e:
+        return _render_settings(request, test_result=f"실패: {e}", show_no_calendar_alert=True)
     except Exception as e:
         return _render_settings(request, test_result=f"실패: {e}")
 

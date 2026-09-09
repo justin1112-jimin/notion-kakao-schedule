@@ -245,5 +245,8 @@
   {% endif %}
 
 </div>
+{% if show_no_calendar_alert %}
+<script>alert("연결된 일정 서비스가 없습니다. Notion 또는 Google Calendar를 먼저 연결해주세요.");</script>
+{% endif %}
 </body>
 </html>
