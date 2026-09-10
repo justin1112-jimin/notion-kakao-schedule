@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>발송 이력 — Notion → 카카오 일정 알림</title>
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('theme');
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+})();
+</script>
 <style>
   :root {
     --bg: #eef0f4;
@@ -15,7 +23,37 @@
     --accent-soft: #eef2ff;
     --ok-bg: #ecfdf3; --ok-fg: #067647; --ok-border: #abefc6;
     --bad-bg: #fef3f2; --bad-fg: #b42318; --bad-border: #fecdca;
+    --hover-bg: #f3f4f6;
+    --thead-bg: #f9fafb;
+    --stat-border: #c7d2fe;
+    --badge-scheduler-bg: #dbeafe; --badge-scheduler-fg: #0c4a6e;
+    --badge-backup-bg: #fed7aa; --badge-backup-fg: #7c2d12;
+    --badge-manual-bg: #e9d5ff; --badge-manual-fg: #6b21a8;
     --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161b; --card: #1c1f26; --border: #2e323c;
+      --text: #e8eaed; --muted: #9aa1ac;
+      --accent: #6c93f2; --accent-soft: #22283c;
+      --ok-bg: #0f2a1e; --ok-fg: #4ade80; --ok-border: #1f5c3f;
+      --bad-bg: #33181a; --bad-fg: #f87171; --bad-border: #6b2530;
+      --hover-bg: #262a33; --thead-bg: #20232b; --stat-border: #33406b;
+      --badge-scheduler-bg: #1e3a5f; --badge-scheduler-fg: #93c5fd;
+      --badge-backup-bg: #4a2f14; --badge-backup-fg: #fdba74;
+      --badge-manual-bg: #33224a; --badge-manual-fg: #d8b4fe;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161b; --card: #1c1f26; --border: #2e323c;
+    --text: #e8eaed; --muted: #9aa1ac;
+    --accent: #6c93f2; --accent-soft: #22283c;
+    --ok-bg: #0f2a1e; --ok-fg: #4ade80; --ok-border: #1f5c3f;
+    --bad-bg: #33181a; --bad-fg: #f87171; --bad-border: #6b2530;
+    --hover-bg: #262a33; --thead-bg: #20232b; --stat-border: #33406b;
+    --badge-scheduler-bg: #1e3a5f; --badge-scheduler-fg: #93c5fd;
+    --badge-backup-bg: #4a2f14; --badge-backup-fg: #fdba74;
+    --badge-manual-bg: #33224a; --badge-manual-fg: #d8b4fe;
   }
   * { box-sizing: border-box; }
   body {
@@ -25,6 +63,7 @@
     margin: 0;
     padding: 40px 16px 80px;
     line-height: 1.4;
+    transition: background .15s, color .15s;
   }
   .page { max-width: 720px; margin: 0 auto; }
   .header { position: relative; text-align: center; margin-bottom: 24px; }
@@ -39,7 +78,7 @@
     border: 1px solid var(--border);
   }
   .nav a.active { background: var(--accent); color: white; border-color: var(--accent); }
-  .nav a:hover { background: #f3f4f6; }
+  .nav a:hover { background: var(--hover-bg); }
 
   .card {
     background: var(--card);
@@ -53,7 +92,7 @@
     display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
   }
   .stat-box {
-    background: var(--accent-soft); border: 1px solid #c7d2fe; border-radius: 8px;
+    background: var(--accent-soft); border: 1px solid var(--stat-border); border-radius: 8px;
     padding: 16px; text-align: center;
   }
   .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -66,7 +105,7 @@
   table {
     width: 100%; font-size: 13px; border-collapse: collapse;
   }
-  thead { background: #f9fafb; }
+  thead { background: var(--thead-bg); }
   th {
     padding: 12px; text-align: left; font-weight: 600; color: var(--muted);
     border-bottom: 1px solid var(--border);
@@ -82,9 +121,9 @@
   }
   .badge-success { background: var(--ok-bg); color: var(--ok-fg); }
   .badge-failed { background: var(--bad-bg); color: var(--bad-fg); }
-  .badge-scheduler { background: #dbeafe; color: #0c4a6e; }
-  .badge-backup { background: #fed7aa; color: #7c2d12; }
-  .badge-manual { background: #e9d5ff; color: #6b21a8; }
+  .badge-scheduler { background: var(--badge-scheduler-bg); color: var(--badge-scheduler-fg); }
+  .badge-backup { background: var(--badge-backup-bg); color: var(--badge-backup-fg); }
+  .badge-manual { background: var(--badge-manual-bg); color: var(--badge-manual-fg); }
 
   .error-text { color: var(--bad-fg); font-size: 12px; }
   .no-data { text-align: center; color: var(--muted); padding: 40px 20px; }
@@ -105,6 +144,7 @@
       <a href="/settings">⚙️ 설정</a>
       <a href="/dashboard" class="active">📊 이력</a>
       <a href="/logout">로그아웃</a>
+      <a href="#" id="theme-toggle" onclick="toggleTheme(); return false;">🌙</a>
     </div>
   </div>
 
@@ -203,5 +243,20 @@
   </div>
 
 </div>
+<script>
+function toggleTheme() {
+  var root = document.documentElement;
+  var isDark = (root.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
+  var next = isDark ? 'light' : 'dark';
+  root.setAttribute('data-theme', next);
+  try { localStorage.setItem('theme', next); } catch (e) {}
+  document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
+}
+(function () {
+  var root = document.documentElement;
+  var isDark = (root.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
+  document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
+})();
+</script>
 </body>
 </html>

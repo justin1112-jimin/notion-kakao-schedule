@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>로그인 — Notion → 카카오 일정 알림</title>
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('theme');
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+})();
+</script>
 <style>
   :root {
     --bg: #eef0f4;
@@ -14,6 +22,18 @@
     --accent: #2563eb;
     --radius: 14px;
     --bad-bg: #fef3f2; --bad-fg: #b42318; --bad-border: #fecdca;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161b; --card: #1c1f26; --border: #2e323c;
+      --text: #e8eaed; --muted: #9aa1ac; --accent: #6c93f2;
+      --bad-bg: #33181a; --bad-fg: #f87171; --bad-border: #6b2530;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161b; --card: #1c1f26; --border: #2e323c;
+    --text: #e8eaed; --muted: #9aa1ac; --accent: #6c93f2;
+    --bad-bg: #33181a; --bad-fg: #f87171; --bad-border: #6b2530;
   }
   * { box-sizing: border-box; }
   body {
@@ -26,6 +46,7 @@
     align-items: center;
     justify-content: center;
     padding: 16px;
+    transition: background .15s, color .15s;
   }
   .card {
     background: var(--card);

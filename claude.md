@@ -171,7 +171,7 @@ Render/GitHub 양쪽 모두 등록 완료, `daily-notify-backup.yml`이 최소 1
 2. **상세 통계**: 일별/주별/월별 집계, 가장 오래 지속된 발송 streak, 가장 최근 실패 원인 상위 5개
 3. **필터링 및 검색**: 날짜 범위 선택(캘린더), 상태별 필터(성공/실패/모두), 출처별 필터(자동/백업/수동/모두), 실시간 검색
 4. **상호작용성**: 에러 메시지 전체 보기(모달 팝업), 발송 기록 상세 조회, 마우스오버 시 통계값 하이라이트
-5. **다크모드**: 테마 토글 버튼, 시스템 설정 자동 감지, localStorage 저장
+5. **다크모드** (완료, 2026-09-10): `login.html`/`settings.html`/`dashboard.html` 3개 템플릿 모두에 CSS 변수 기반 다크 팔레트 추가. `data-theme` 속성 + `prefers-color-scheme` 미디어쿼리 조합으로 시스템 설정 자동 감지, `localStorage`에 저장해 새로고침/페이지 이동 후에도 유지. FOUC 방지를 위해 저장된 테마를 읽는 스크립트를 `<style>`보다 먼저 배치. 토글 버튼(🌙/☀️)은 settings/dashboard 헤더에만 추가(로그인 페이지는 버튼 없이 저장된/시스템 설정만 반영). 공유 정적 파일(`app/static/`)이 없는 기존 구조를 따라 스크립트/CSS를 템플릿마다 그대로 복제.
 6. **실시간 업데이트**: 새 발송 기록 추가 시 자동 새로고침(Server-Sent Events 또는 polling)
 
 ---
@@ -343,3 +343,13 @@ CRON_SECRET=x KAKAO_REST_API_KEY=x NOTION_CLIENT_ID=x NOTION_CLIENT_SECRET=x \
 import 에러나 라우트 등록 누락을 실제 인프라 없이 바로 잡을 수 있음. 템플릿 쪽은 `Jinja2Templates(directory='app/templates').get_template('settings.html').render(**mock_context)`로 목업 컨텍스트를 채워 렌더링해보면 Jinja 문법 오류를 배포 전에 잡을 수 있음(이번 세션에서 Notion 카드 재배치, 카카오 로그인 전환 때 실제로 이 방식으로 검증함).
 
 **CLAUDE.md에 코드 상태(줄 수 등 구체적 수치)를 적을 때는 실제로 파일을 열어 확인한 값만 쓸 것**: 2026-09-09에 다른 세션이 이 파일을 재구성하면서 "main.py 10544줄" 같은 완전히 허구인 줄 수와, 실제로 존재하지 않는 함수(`send_message`, `get_kakao_refresh_token` 등)를 쓰는 예제 코드를 남겨서 롤백한 적 있음. 검증 안 된 구체적 수치/코드 예제는 안 적느니만 못함 — 특히 파일 크기처럼 다음 커밋에 바로 stale해지는 정보는 애초에 문서화 가치가 낮음(`wc -l`로 언제든 즉시 확인 가능).
+
+**카카오 로그인 Client Secret은 카카오 콘솔과 Render 값이 정확히 일치해야 함**: 카카오 디벨로퍼스 콘솔 → 제품 설정 → 카카오 로그인 → 보안 → "클라이언트 시크릿"의 활성화가 ON이면, `exchange_code_for_tokens()`(`app/kakao_client.py`)가 `KAKAO_CLIENT_SECRET`을 필수로 붙여 보내야 함. Render에 이 값이 없거나 다르면 동의 화면까지는 정상 진행되다가(=redirect_uri는 문제없다는 뜻) `/auth/kakao/callback`의 토큰 교환에서 `raise_for_status()`가 터져 원인 불명의 500이 남.
+
+**Google Calendar는 리다이렉트 URI 등록 + API 활성화가 각각 별도로 필요**: (1) `/google-calendar/callback`은 예전 Google 로그인용 `/auth/callback`과 별개 경로라 Google Cloud Console "승인된 리디렉션 URI"에 따로 추가해야 함(안 하면 동의 화면 뜨기 전에 `redirect_uri_mismatch`). (2) OAuth 설정과 무관하게 "API 및 서비스 → 라이브러리"에서 "Google Calendar API"를 명시적으로 사용 설정(Enable)해야 함(안 하면 동의까지는 성공하고 `get_today_events()` 호출 시 `403 Client Error: Forbidden`).
+
+**Notion 통합은 생성 시점에 Internal(액세스 토큰)/OAuth(Public) 중 선택해야 하고 나중에 못 바꿈**: 기존 통합이 Internal로 만들어져 있으면 Client ID/Secret 자체가 없어서 `/notion/connect`가 `os.environ["NOTION_CLIENT_ID"]`에서 곧바로 `KeyError`(500)가 남. 반드시 새 연결을 만들면서 "인증 방법: OAuth" 선택 + "설치 가능 워크스페이스"는 (마켓플레이스 심사 불필요하도록) "모든 워크스페이스" 대신 특정 워크스페이스 선택. 관리 UI 경로가 기존 문서의 `my-integrations`에서 `app.notion.com/developers/connections`("개발자 도구 → 연결")로 바뀜.
+
+**`run_daily_job()`은 캘린더 미연결 시 가드가 비대칭이었음(수정 완료)**: Google Calendar는 `google_calendar_refresh_token` 유무를 체크 후 없으면 조용히 스킵하는데, Notion은 그런 체크 없이 항상 API를 호출해서 `notion_token`/`notion_database_id`가 비어있으면 `.../v1/databases//query`로 원인 불명의 400이 났음. `scheduler.py`에 `NoCalendarConnectedError` 가드를 추가해 두 캘린더 모두 미연결이면 명확한 메시지로 실패하게 하고, `/test-send`에서는 `settings.html`에 `alert()` 팝업으로 안내하도록 함.
+
+**Claude Code는 로그인 세션이 필요한 라우트(OAuth 동의 화면, 테스트 전송 버튼)를 직접 트리거할 수 없음**: 이 프로젝트 세션엔 브라우저 자동화가 연결돼 있지 않아서, `/settings`의 각종 "연결" 버튼이나 "테스트 전송" 결과는 사용자가 직접 클릭하고 화면/텍스트를 캡처해서 알려줘야 확인 가능. curl로는 로그인 게이트 뒤 라우트의 실제 동작(OAuth mismatch, 발송 성공 여부)을 검증 못함.
