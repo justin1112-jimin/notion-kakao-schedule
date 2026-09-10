@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -8,6 +9,20 @@ from app import db, google_calendar_client, kakao_client, notion_client
 
 KST = ZoneInfo("Asia/Seoul")
 JOB_ID = "daily_notify"
+
+
+def _app_base_url() -> str:
+    """카카오 메시지의 '자세히 보기' 링크에 쓸 앱 자신의 공개 URL.
+
+    Render는 배포된 서비스에 RENDER_EXTERNAL_URL을 자동으로 주입하므로 별도
+    설정 없이 프로덕션 도메인을 얻을 수 있음. 로컬 개발 환경에서는 이 값이
+    없으므로 localhost로 대체(로컬 테스트 발송이 localhost로 가는 것은 정상).
+    """
+    return (
+        os.environ.get("PUBLIC_BASE_URL")
+        or os.environ.get("RENDER_EXTERNAL_URL")
+        or "http://localhost:8000"
+    )
 
 
 class NoCalendarConnectedError(Exception):
@@ -59,7 +74,8 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
         if new_refresh_token:
             db.update_kakao_refresh_token(user_id, new_refresh_token)
 
-        kakao_client.send_kakao_memo(tokens["access_token"], message)
+        link_url = f"{_app_base_url()}/dashboard"
+        kakao_client.send_kakao_memo(tokens["access_token"], message, link_url)
         db.record_send_result(user_id, "success", now)
         db.add_send_history(user_id, now, "success", source)
         return message

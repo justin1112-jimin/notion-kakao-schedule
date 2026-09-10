@@ -60,13 +60,14 @@ def fetch_user_info(access_token: str) -> dict:
     return {"user_id": str(data["id"]), "nickname": nickname}
 
 
-def send_kakao_memo(access_token: str, message: str):
+def send_kakao_memo(access_token: str, message: str, link_url: str):
     url = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
     headers = {"Authorization": f"Bearer {access_token}"}
     template_object = {
         "object_type": "text",
         "text": message,
-        "link": {"web_url": "https://notion.so", "mobile_web_url": "https://notion.so"},
+        "link": {"web_url": link_url, "mobile_web_url": link_url},
+        "button_title": "대시보드 보기",
     }
     resp = requests.post(
         url,
