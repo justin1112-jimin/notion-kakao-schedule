@@ -9,3 +9,5 @@ uvicorn.log
 _v1_backup/
 .claude/settings.json
 .claude/scheduled_tasks.lock
+CLAUDE.local.md
+docs/MONETIZATION.md

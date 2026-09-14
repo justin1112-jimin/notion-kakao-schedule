@@ -16,7 +16,7 @@ jobs:
           response=$(curl -sS --connect-timeout 30 --max-time 120 \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -w '\n%{http_code}' \
-            https://notion-kakao-schedule.onrender.com/internal/run-daily)
+            "${{ vars.APP_URL }}/internal/run-daily")
           status="${response##*$'\n'}"
           body="${response%$'\n'*}"
           echo "$body"

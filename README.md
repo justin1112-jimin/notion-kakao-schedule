@@ -104,7 +104,7 @@ GOOGLE_CLIENT_ID="..." GOOGLE_CLIENT_SECRET="..." \
 
 ## Render 배포
 
-1. GitHub에 이 저장소 push (private 권장)
+1. GitHub에 이 저장소 push (fork한 저장소도 가능)
 2. Render → New → **Web Service** → 이 저장소 연결
 3. Build Command: `pip install -r requirements.txt`
 4. Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
@@ -128,6 +128,15 @@ Render 무료 Postgres는 30일 후 만료되지만, Upstash Redis 무료 티어
 2. Add New Monitor → HTTP(s) → URL: `https://<render-서비스명>.onrender.com/settings`
 3. Interval: 5분
 
+### 발송 실패 안전망 (GitHub Actions 백업 트리거, 선택)
+
+앱 내부 스케줄러가 발송에 실패해도 알아챌 수 있도록, GitHub Actions가 10분 뒤 `/internal/run-daily`를 호출해 재시도하고 실패 시 저장소 소유자에게 이메일로 알려주는 안전망입니다(`.github/workflows/daily-notify-backup.yml`).
+
+1. GitHub 저장소 Settings → Secrets and variables → Actions
+   - **Secrets** 탭에 `CRON_SECRET` 추가 (Render 환경변수와 동일한 값)
+   - **Variables** 탭에 `APP_URL` 추가 (예: `https://<render-서비스명>.onrender.com`, 끝 슬래시 없이)
+2. 별도 설정 없이 매일 08:10 KST에 자동 실행됩니다.
+
 ## 사용법
 
 배포/로컬 실행 후:
@@ -150,3 +159,11 @@ Render 무료 Postgres는 30일 후 만료되지만, Upstash Redis 무료 티어
 
 - 대시보드 시각화 강화 (Chart.js: 일별 그래프, 출처별 파이 차트 등)
 - Capacitor로 이 웹 UI를 감싸서 iOS/Android 하이브리드 앱으로 배포
+
+## 기여
+
+이슈/PR 환영합니다. 코드 스타일이나 별도 절차는 아직 정해진 게 없으니, 기존 코드 패턴(예: 새 OAuth 연동 추가 시 `os.environ["X"]`는 모듈 최상단이 아니라 함수 내부에서 읽기)을 참고해 자유롭게 제안해주세요.
+
+## 라이선스
+
+[MIT](LICENSE)

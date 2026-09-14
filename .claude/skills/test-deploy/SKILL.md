@@ -5,7 +5,7 @@ description: Render 배포 직후 /settings, /dashboard, /api/send-history 엔�
 
 # test-deploy 스킬
 
-Render에 배포된 notion-kakao-schedule 서비스의 핵심 엔드포인트를 자동 테스트합니다.
+Render에 배포된 서비스(`https://<render-서비스명>.onrender.com`)의 핵심 엔드포인트를 자동 테스트합니다.
 
 ## 테스트 항목
 
@@ -25,7 +25,7 @@ test-deploy
 ## 결과 예시
 
 ```
-🧪 배포 테스트 시작: https://notion-kakao-schedule.onrender.com
+🧪 배포 테스트 시작: https://<render-서비스명>.onrender.com
 ✅ /settings: OK (200)
 ✅ /dashboard: OK (200)
 ✅ /api/send-history: OK (200)
