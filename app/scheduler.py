@@ -104,20 +104,29 @@ def _sanitize_error(error_msg: str) -> str:
     return "Request failed"
 
 
-def create_scheduler(user_id: str, settings: dict) -> BackgroundScheduler:
-    sched = BackgroundScheduler(timezone=KST)
+def _job_id(user_id: str) -> str:
+    return f"{JOB_ID}:{user_id}"
+
+
+def add_or_update_user_job(sched: BackgroundScheduler, user_id: str, hour: int, minute: int):
+    """사용자의 알림 시각으로 작업을 등록/갱신 (신규 사용자면 새로 추가됨)"""
     sched.add_job(
         run_daily_job,
-        CronTrigger(hour=settings["notify_hour"], minute=settings["notify_minute"], timezone=KST),
-        id=JOB_ID,
+        CronTrigger(hour=hour, minute=minute, timezone=KST),
+        id=_job_id(user_id),
         kwargs={"user_id": user_id, "source": "scheduler"},
+        replace_existing=True,
     )
+
+
+def create_scheduler() -> BackgroundScheduler:
+    """지금까지 등록된 모든 사용자 각각의 알림 시각으로 작업을 등록한 스케줄러 생성"""
+    sched = BackgroundScheduler(timezone=KST)
     sched.start()
+    for user_id in db.get_all_user_ids():
+        settings = db.get_settings(user_id)
+        add_or_update_user_job(sched, user_id, settings["notify_hour"], settings["notify_minute"])
     return sched
-
-
-def reschedule(sched: BackgroundScheduler, hour: int, minute: int):
-    sched.reschedule_job(JOB_ID, trigger=CronTrigger(hour=hour, minute=minute, timezone=KST))
 
 
 def already_sent_today(user_id: str) -> bool:

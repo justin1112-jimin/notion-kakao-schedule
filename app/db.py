@@ -12,6 +12,9 @@ def _get_history_key(user_id: str) -> str:
     return f"user:{user_id}:send_history"
 
 
+ALL_USERS_KEY = "all_user_ids"
+
+
 DEFAULTS = {
     "notion_token": "",
     "notion_database_id": "",
@@ -38,8 +41,9 @@ def init_db():
 
 
 def get_settings(user_id: str) -> dict:
-    """사용자별 설정 조회"""
+    """사용자별 설정 조회 (조회 시점에 전체 사용자 목록에도 등록)"""
     client = get_client()
+    client.sadd(ALL_USERS_KEY, user_id)
     key = _get_settings_key(user_id)
     if not client.exists(key):
         client.hset(key, mapping=DEFAULTS)
@@ -50,6 +54,12 @@ def get_settings(user_id: str) -> dict:
     settings["last_sent_at"] = settings["last_sent_at"] or None
     settings["last_sent_status"] = settings["last_sent_status"] or None
     return settings
+
+
+def get_all_user_ids() -> list:
+    """지금까지 설정을 조회한 적 있는 모든 사용자 ID 목록 (스케줄러/백업 트리거가 순회할 대상)"""
+    client = get_client()
+    return list(client.smembers(ALL_USERS_KEY))
 
 
 def update_general_settings(user_id: str, notify_hour: int, notify_minute: int):

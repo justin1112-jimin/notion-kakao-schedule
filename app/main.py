@@ -16,15 +16,10 @@ templates = Jinja2Templates(directory="app/templates")
 # secret-header check inside the handler (called by GitHub Actions, not a browser).
 PUBLIC_PATHS = {"/login", "/login/kakao", "/auth/kakao/callback", "/internal/run-daily"}
 
-# 현재 개인용(1인) 운영 — 앱 내부 스케줄러(APScheduler)는 이 사용자 기준으로만 동작.
-# 다중 사용자가 실제로 늘어나면 사용자별 스케줄 등록 방식으로 교체 필요.
-ADMIN_USER_ID = os.environ.get("ADMIN_USER_ID", "default_user")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = db.get_settings(ADMIN_USER_ID)
-    app.state.scheduler = scheduler.create_scheduler(ADMIN_USER_ID, settings)
+    app.state.scheduler = scheduler.create_scheduler()
     yield
     app.state.scheduler.shutdown()
 
@@ -52,6 +47,11 @@ def _get_user_id(request: Request) -> str:
 def _render_settings(request: Request, **extra):
     user_id = _get_user_id(request)
     settings = db.get_settings(user_id)
+    # 방문 시점에 스케줄을 DB 설정과 동기화 — 신규 사용자 최초 등록 및
+    # (드물게) 스케줄러가 놓친 사용자를 다음 방문 때 자동으로 복구함.
+    scheduler.add_or_update_user_job(
+        request.app.state.scheduler, user_id, settings["notify_hour"], settings["notify_minute"]
+    )
     notion_databases = []
     if settings["notion_token"]:
         try:
@@ -127,7 +127,7 @@ async def save_settings(
 ):
     user_id = _get_user_id(request)
     db.update_general_settings(user_id=user_id, notify_hour=notify_hour, notify_minute=notify_minute)
-    scheduler.reschedule(request.app.state.scheduler, notify_hour, notify_minute)
+    scheduler.add_or_update_user_job(request.app.state.scheduler, user_id, notify_hour, notify_minute)
     return RedirectResponse("/settings?flash=saved", status_code=303)
 
 
@@ -257,14 +257,26 @@ async def dashboard(request: Request):
 
 @app.get("/internal/run-daily")
 async def internal_run_daily(request: Request):
+    """앱 내부 스케줄러가 놓친 사용자를 재시도하는 백업 트리거 (GitHub Actions가 호출).
+
+    등록된 전체 사용자를 순회해서, 오늘 아직 성공 발송을 못 한 사용자만 재시도한다.
+    한 명이라도 실패하면 500을 반환해 GitHub Actions가 저장소 소유자에게 이메일로 알리게 한다.
+    """
     if request.headers.get("X-Cron-Secret") != os.environ["CRON_SECRET"]:
         return PlainTextResponse("unauthorized", status_code=401)
 
-    if scheduler.already_sent_today(ADMIN_USER_ID):
-        return PlainTextResponse("already sent today", status_code=200)
+    results = []
+    any_failed = False
+    for user_id in db.get_all_user_ids():
+        if scheduler.already_sent_today(user_id):
+            results.append(f"{user_id}: already sent today")
+            continue
+        try:
+            scheduler.run_daily_job(user_id=user_id, source="backup")
+            results.append(f"{user_id}: sent")
+        except Exception as e:
+            any_failed = True
+            results.append(f"{user_id}: failed - {e}")
 
-    try:
-        scheduler.run_daily_job(user_id=ADMIN_USER_ID, source="backup")
-        return PlainTextResponse("sent", status_code=200)
-    except Exception as e:
-        return PlainTextResponse(f"failed: {e}", status_code=500)
+    body = "\n".join(results) if results else "no registered users"
+    return PlainTextResponse(body, status_code=500 if any_failed else 200)
