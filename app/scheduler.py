@@ -129,6 +129,12 @@ def create_scheduler() -> BackgroundScheduler:
     return sched
 
 
+def get_next_run_time(sched: BackgroundScheduler, user_id: str):
+    """이 사용자의 다음 자동 발송 예정 시각 (스케줄러에 등록 안 돼있으면 None)"""
+    job = sched.get_job(_job_id(user_id))
+    return job.next_run_time if job else None
+
+
 def already_sent_today(user_id: str) -> bool:
     """오늘 이미 성공 발송했는지 확인"""
     settings = db.get_settings(user_id)

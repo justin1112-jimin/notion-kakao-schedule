@@ -241,6 +241,32 @@ async def api_send_history(request: Request):
     })
 
 
+@app.get("/status")
+async def status_page(request: Request):
+    """지금 저장된 알림 시각과, 스케줄러에 실제로 예약된 다음 발송 시각을 보여줌.
+
+    두 값이 다르게 보인다면(예: 방금 시각을 바꿨는데 아직 반영 전) /settings를
+    한 번 방문하면 즉시 동기화됨(`_render_settings`가 매번 재등록하므로).
+    """
+    user_id = _get_user_id(request)
+    settings = db.get_settings(user_id)
+    scheduler.add_or_update_user_job(
+        request.app.state.scheduler, user_id, settings["notify_hour"], settings["notify_minute"]
+    )
+    next_run_at = scheduler.get_next_run_time(request.app.state.scheduler, user_id)
+    context = {
+        "request": request,
+        "settings": settings,
+        "nickname": request.session.get("nickname"),
+        "notion_connected": bool(settings["notion_token"]),
+        "kakao_connected": bool(settings["kakao_refresh_token"]),
+        "google_calendar_connected": bool(settings["google_calendar_refresh_token"]),
+        "already_sent_today": scheduler.already_sent_today(user_id),
+        "next_run_at": next_run_at,
+    }
+    return templates.TemplateResponse(request=request, name="status.html", context=context)
+
+
 @app.get("/dashboard")
 async def dashboard(request: Request):
     """발송 이력 대시보드 (로그인 필수)"""
