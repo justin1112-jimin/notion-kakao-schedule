@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>직접 배포하기 — Notion → 카카오 일정 알림</title>
+<meta name="description" content="Notion → 카카오 일정 알림을 나만의 Render 인스턴스로 직접 배포하는 퀵스타트 가이드.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%85%3C/text%3E%3C/svg%3E">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('theme');
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><span class="logo">📅</span> Notion → 카카오 일정 알림</a>
+    <div class="navlinks">
+      <a href="./">← 홈으로</a>
+      <a href="https://github.com/justin1112-jimin/notion-kakao-schedule" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap guide">
+  <h1>직접 배포하기</h1>
+  <p class="lead">공용으로 배포된 인스턴스 대신, 본인 소유의 Render + Upstash Redis로 나만의 인스턴스를 띄우고 싶다면 이 가이드를 따라하세요. 전체 세부 설정(콘솔 스크린샷 수준)은 저장소 README가 더 자세하니, 막히는 단계가 있으면 그쪽을 참고하세요.</p>
+
+  <div class="callout">
+    💡 자기 계정으로 카카오/Notion 콘솔에서 앱을 새로 만들어야 하는 이유: 이 프로젝트는 OAuth 기반이라, 앱 소유자(배포하는 사람)가 카카오/Notion 개발자 콘솔에서 <strong>본인 명의의 OAuth 앱을 한 번만</strong> 만들면, 그 뒤로 모든 사용자는 "연결" 버튼만 누르면 됩니다.
+  </div>
+
+  <h2>1. 저장소 준비</h2>
+  <ol>
+    <li>GitHub에서 저장소를 Fork (또는 그대로 clone해서 본인 저장소로 push)</li>
+    <li>로컬에서 실행해보려면:</li>
+  </ol>
+  <pre>git clone &lt;fork한 저장소 URL&gt;
+cd notion-kakao-schedule
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt</pre>
+
+  <h2>2. 환경변수</h2>
+  <p>아래 값들은 전부 각 플랫폼 개발자 콘솔에서 본인 명의로 직접 발급받아야 합니다 (자세한 발급 절차는 README의 "카카오 개발자 앱 설정" / "Notion 연동 설정" / "Google Calendar 연동 설정" 절 참고).</p>
+  <table>
+    <tr><th>변수</th><th>용도</th></tr>
+    <tr><td><code>REDIS_URL</code></td><td>Upstash Redis 연결 문자열</td></tr>
+    <tr><td><code>SESSION_SECRET_KEY</code></td><td>세션 쿠키 서명용 랜덤 문자열</td></tr>
+    <tr><td><code>KAKAO_REST_API_KEY</code></td><td>카카오 로그인 + 메시지 전송용 앱 키</td></tr>
+    <tr><td><code>KAKAO_CLIENT_SECRET</code></td><td>(선택) 같은 카카오 앱의 Client Secret</td></tr>
+    <tr><td><code>NOTION_CLIENT_ID</code> / <code>NOTION_CLIENT_SECRET</code></td><td>Notion OAuth 공개 통합</td></tr>
+    <tr><td><code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code></td><td>Google Calendar 연동용 (선택)</td></tr>
+    <tr><td><code>CRON_SECRET</code></td><td>GitHub Actions 백업 트리거 인증 (배포 시에만 필요)</td></tr>
+  </table>
+
+  <h2>3. Render 배포</h2>
+  <ol>
+    <li>Render → New → <strong>Web Service</strong> → Fork한 저장소 연결</li>
+    <li>Build Command: <code>pip install -r requirements.txt</code></li>
+    <li>Start Command: <code>uvicorn app.main:app --host 0.0.0.0 --port $PORT</code></li>
+    <li>Environment Variables에 위 표의 항목을 <strong>전부</strong> 추가</li>
+    <li>Deploy</li>
+  </ol>
+  <div class="callout">
+    ⚠️ 순서 주의: 환경변수를 먼저 추가한 뒤 코드를 push하세요. 반대 순서면 env var가 없어서 해당 라우트가 500 에러를 냅니다.
+  </div>
+
+  <h2>4. Upstash Redis (무료)</h2>
+  <p>Render 무료 웹서비스는 디스크가 재배포마다 초기화되므로, 설정을 유지하려면 외부 저장소가 필요합니다. <a href="https://upstash.com" target="_blank" rel="noopener">upstash.com</a>에서 Redis 데이터베이스를 무료로 만들고, TCP 연결 URL을 <code>REDIS_URL</code>에 넣으세요.</p>
+
+  <h2>5. (선택) 항상 깨어있게 유지하기</h2>
+  <p>Render 무료 플랜은 일정 시간 요청이 없으면 서버가 잠드는데, 그러면 내부 스케줄러도 같이 멈춥니다. <a href="https://uptimerobot.com" target="_blank" rel="noopener">UptimeRobot</a> 같은 무료 핑 서비스로 5분마다 <code>/settings</code>를 호출해서 깨어있게 유지하세요.</p>
+
+  <h2>6. (선택) 발송 실패 백업 트리거</h2>
+  <p>내부 스케줄러가 발송에 실패해도 알 수 있도록, GitHub Actions가 10분 뒤 <code>/internal/run-daily</code>를 호출해 재시도하고 실패 시 이메일로 알려주는 안전망이 포함돼 있습니다(<code>.github/workflows/daily-notify-backup.yml</code>). 저장소 Settings → Secrets에 <code>CRON_SECRET</code>, Variables에 <code>APP_URL</code>만 추가하면 자동으로 동작합니다.</p>
+
+  <div class="callout">
+    전체 설정(카카오/Notion/Google 콘솔 화면별 절차, 트러블슈팅)은 <a href="https://github.com/justin1112-jimin/notion-kakao-schedule#readme" target="_blank" rel="noopener">저장소 README</a>에 가장 자세히 정리돼 있습니다.
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>MIT License</span>
+    <a href="https://github.com/justin1112-jimin/notion-kakao-schedule" target="_blank" rel="noopener">github.com/justin1112-jimin/notion-kakao-schedule</a>
+  </div>
+</footer>
+
+</body>
+</html>
