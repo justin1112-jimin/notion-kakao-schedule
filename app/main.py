@@ -1,5 +1,6 @@
 import os
 import secrets
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -303,6 +304,7 @@ async def internal_run_daily(request: Request):
         except Exception as e:
             any_failed = True
             results.append(f"{user_id}: failed - {e}")
+        time.sleep(0.3)  # 카카오 API 초당 요청 한도 방지용 (사용자 순차 발송 사이 간격)
 
     body = "\n".join(results) if results else "no registered users"
     return PlainTextResponse(body, status_code=500 if any_failed else 200)

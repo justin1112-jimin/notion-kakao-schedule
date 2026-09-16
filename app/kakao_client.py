@@ -1,8 +1,26 @@
 import json
 import os
+import time
 from urllib.parse import urlencode
 
 import requests
+
+
+def _post_with_retry(url: str, max_retries: int = 3, **kwargs) -> requests.Response:
+    """카카오 API가 429(rate limit)를 반환하면 지수 백오프로 재시도.
+
+    여러 사용자의 발송이 같은 순간(예: 다들 08:00으로 설정)에 몰려서
+    앱 단위 초당 요청 한도에 걸리는 경우를 대비한 안전장치.
+    """
+    delay = 1.0
+    for attempt in range(max_retries + 1):
+        resp = requests.post(url, timeout=10, **kwargs)
+        if resp.status_code == 429 and attempt < max_retries:
+            time.sleep(delay)
+            delay *= 2
+            continue
+        resp.raise_for_status()
+        return resp
 
 
 def build_authorize_url(redirect_uri: str, state: str) -> str:
@@ -42,8 +60,7 @@ def refresh_kakao_access_token(refresh_token: str) -> dict:
     if client_secret:
         data["client_secret"] = client_secret
 
-    resp = requests.post("https://kauth.kakao.com/oauth/token", data=data, timeout=10)
-    resp.raise_for_status()
+    resp = _post_with_retry("https://kauth.kakao.com/oauth/token", data=data)
     return resp.json()
 
 
@@ -69,11 +86,9 @@ def send_kakao_memo(access_token: str, message: str, link_url: str):
         "link": {"web_url": link_url, "mobile_web_url": link_url},
         "button_title": "대시보드 보기",
     }
-    resp = requests.post(
+    resp = _post_with_retry(
         url,
         headers=headers,
         data={"template_object": json.dumps(template_object)},
-        timeout=10,
     )
-    resp.raise_for_status()
     return resp.json()
