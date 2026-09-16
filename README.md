@@ -155,7 +155,7 @@ Render 무료 Postgres는 30일 후 만료되지만, Upstash Redis 무료 티어
 - v1(로컬 스크립트 + macOS launchd 버전)은 `_v1_backup/`에 보관되어 있으며 더 이상 사용하지 않습니다.
 - 여러 사용자가 각자 로그인해서 각자의 Notion/카카오/Google Calendar를 독립적으로 연결할 수 있습니다(Redis 키가 `user:{카카오 id}:*`로 격리됨).
 
-## 다음 단계 (v2 로드맵)
+## 다음 단계 (v3 백로그)
 
 - 대시보드 시각화 강화 (Chart.js: 일별 그래프, 출처별 파이 차트 등)
 - Capacitor로 이 웹 UI를 감싸서 iOS/Android 하이브리드 앱으로 배포
