@@ -1,6 +1,6 @@
 # Notion → 카카오톡 오늘 일정 알림
 
-**버전**: v2.1
+**버전**: v2.1 · [소개 페이지](https://justin1112-jimin.github.io/notion-kakao-schedule/)
 
 Notion(과 선택적으로 Google Calendar)에서 오늘 날짜의 일정을 가져와, 매일 아침 카카오톡 "나에게 보내기"로 요약해서 보내주는 개인용 자동화 도구입니다.
 
