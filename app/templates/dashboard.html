@@ -127,6 +127,11 @@
 
   .error-text { color: var(--bad-fg); font-size: 12px; }
   .no-data { text-align: center; color: var(--muted); padding: 40px 20px; }
+  .gh-link {
+    display: block; text-align: center; margin-top: 20px; font-size: 11px;
+    color: var(--muted); text-decoration: none;
+  }
+  .gh-link:hover { color: var(--text); }
 
   @media (max-width: 480px) {
     .stats-grid { grid-template-columns: 1fr; }
@@ -242,6 +247,8 @@
     </div>
     {% endif %}
   </div>
+
+  <a class="gh-link" href="https://github.com/justin1112-jimin/notion-kakao-schedule" target="_blank" rel="noopener">⭐ GitHub</a>
 
 </div>
 <script>

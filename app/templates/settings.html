@@ -136,6 +136,11 @@
   .actions button { width: 100%; }
 
   .footer-status { text-align: center; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .gh-link {
+    display: block; text-align: center; margin-top: 20px; font-size: 11px;
+    color: var(--muted); text-decoration: none;
+  }
+  .gh-link:hover { color: var(--text); }
 
   h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
   pre {
@@ -277,6 +282,8 @@
     <pre>{{ test_result }}</pre>
   </div>
   {% endif %}
+
+  <a class="gh-link" href="https://github.com/justin1112-jimin/notion-kakao-schedule" target="_blank" rel="noopener">⭐ GitHub</a>
 
 </div>
 {% if show_no_calendar_alert %}
