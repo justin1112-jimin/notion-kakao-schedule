@@ -1,6 +1,6 @@
 # Notion → 카카오톡 오늘 일정 알림
 
-**버전**: v2.2 · [소개 페이지](https://justin1112-jimin.github.io/notion-kakao-schedule/)
+**버전**: v2.3 · [소개 페이지](https://justin1112-jimin.github.io/notion-kakao-schedule/)
 
 Notion(과 선택적으로 Google Calendar)에서 오늘 날짜의 일정을 가져와, 매일 아침 카카오톡 "나에게 보내기"로 요약해서 보내주는 개인용 자동화 도구입니다.
 
@@ -11,18 +11,19 @@ FastAPI 웹앱으로 만들어져 있고, 카카오 로그인 하나로 신원 �
 notion-kakao-schedule/
 ├── app/
 │   ├── main.py                    # FastAPI 앱, 전체 라우트 + 로깅/Sentry 초기화
-│   ├── db.py                      # Redis(Upstash) 저장소 (싱글턴 클라이언트, 사용자별 설정/토큰/발송 이력)
+│   ├── db.py                      # Redis(Upstash) 저장소 (싱글턴 클라이언트, 토큰 암호화, 사용자별 설정/발송 이력)
 │   ├── notion_client.py           # Notion OAuth + 일정 조회 (date/title 속성 자동 감지)
 │   ├── kakao_client.py            # 카카오 로그인 + 메시지 전송 (429 재시도/백오프 포함)
 │   ├── google_calendar_client.py  # Google Calendar OAuth + 일정 조회 (선택 기능)
 │   ├── scheduler.py               # APScheduler 기반 매일 알림 스케줄러, 캘린더 소스별 부분 실패 처리
+│   ├── static/                    # 템플릿 공용 theme.css/theme.js (라이트·다크 토큰, 다크모드 토글)
 │   └── templates/
 │       ├── login.html             # 로그인 페이지 (카카오)
 │       ├── settings.html          # 설정 페이지 (Notion/카카오/Google Calendar 연결)
 │       ├── dashboard.html         # 발송 이력 대시보드
 │       └── status.html            # 저장된 설정 vs 스케줄러 실제 예약 시각 비교
 ├── docs/                          # GitHub Pages 소개 페이지 (index.html/guide.html/style.css)
-├── tests/                         # pytest 회귀 테스트 (scheduler.py/db.py) — push/PR마다 CI로 자동 실행
+├── tests/                         # pytest 회귀 테스트 — push/PR마다 CI로 자동 실행
 ├── requirements.txt
 ├── requirements-dev.txt           # requirements.txt + pytest
 └── _v1_backup/               # (gitignore) v1 로컬 스크립트 백업, 배포엔 미포함
@@ -175,6 +176,11 @@ Render 무료 Postgres는 30일 후 만료되지만, Upstash Redis 무료 티어
 
 ## 변경 이력
 
+- **v2.3**: 보안/UX/접근성 정리 릴리스.
+  - OAuth 토큰(Notion/카카오/Google Calendar) Redis 저장 시 선택적 암호화(`TOKEN_ENCRYPTION_KEY`, Fernet) 추가 — 하위 호환(키 없으면 기존처럼 평문), 기존 평문 데이터도 무중단으로 점진 마이그레이션
+  - 로그인 에러 메시지를 `/login?error=...` 쿼리 파라미터 대신 세션 기반 1회성 플래시로 변경 (새로고침/URL 공유 시 반복 노출되던 문제 해결)
+  - 다크모드 토글을 `<a>`에서 `<button aria-label="다크모드 전환">`으로 변경 (스크린리더 접근성)
+  - `login/settings/dashboard/status` 4개 템플릿에 중복돼 있던 CSS 컬러 토큰과 다크모드 스크립트를 `app/static/theme.css`/`theme.js`로 추출
 - **v2.2**: 신뢰성/관측성 강화 릴리스.
   - `run_daily_job()`이 Notion/Google Calendar 중 한쪽 조회에 실패해도 나머지 소스는 정상 발송하도록 수정 (이전엔 한쪽 실패가 이미 조회된 내용까지 통째로 막아버렸음)
   - Google Calendar "재연결" 버튼이 토큰이 살아있는 것처럼 보일 때(실제로는 만료됐어도) 화면에서 사라지던 버그 수정, 연결 배지 옆에 "마지막 조회 성공" 시각 표시

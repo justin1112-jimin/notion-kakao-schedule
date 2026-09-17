@@ -7,6 +7,7 @@ Notion(과 선택적으로 Google Calendar)에서 **오늘 날짜의 일정**을
 - **v2 (완료)**: 발송 이력 대시보드(다크모드 포함) + 다중 사용자 자동 발송 실제 지원(사용자별 개별 스케줄) + `/status` 상태 확인 페이지 + 오픈소스 공개
   - **v2.1**: 카카오 API rate limit 대응(429 재시도/백오프), GitHub Pages 소개 페이지 공개
   - **v2.2**: 캘린더 소스별 부분 실패 처리(한쪽 실패가 전체 발송을 막지 않도록), Redis 클라이언트 싱글턴화, 구조화 로깅 + 선택적 Sentry 에러 트래킹, pytest 회귀 테스트 + CI
+  - **v2.3**: OAuth 토큰 Redis 저장 시 선택적 암호화(`TOKEN_ENCRYPTION_KEY`), 로그인 에러를 세션 기반 1회성 플래시로 변경, 다크모드 토글 접근성(`<button>`+`aria-label`), 템플릿 4개의 CSS/JS 중복을 `app/static/`으로 추출
 - **v3 (예정)**: 대시보드 시각화 고도화(Chart.js 등) + Capacitor로 하이브리드 앱 패키징(iOS/Android) — 백로그, 아직 착수 전
 
 세부 실행/배포 방법은 `README.md` 참고.
@@ -34,6 +35,7 @@ Upstash Redis (설정/토큰 저장)          Notion + Google Calendar 조회 �
 | `app/notion_client.py` | Notion OAuth + 일정 조회 (속성 자동 감지) |
 | `app/google_calendar_client.py` | Google Calendar OAuth + 일정 조회 |
 | `app/scheduler.py` | APScheduler, `run_daily_job(user_id, source)` — 캘린더 소스별 부분 실패 처리 |
+| `app/static/theme.css`, `theme.js` | 4개 템플릿 공용 컬러 토큰(라이트/다크) + 다크모드 토글 스크립트 |
 | `app/templates/login.html` | 로그인 페이지 (카카오) |
 | `app/templates/settings.html` | 설정 페이지 (Notion/카카오/Google Calendar 연결) |
 | `app/templates/dashboard.html` | 발송 이력 대시보드 |
@@ -83,6 +85,10 @@ Upstash Redis (설정/토큰 저장)          Notion + Google Calendar 조회 �
 **로깅은 `logging` 모듈로, 에러 트래킹은 `SENTRY_DSN` 선택적 연동으로**: `print`나 문자열 반환값에 의존하지 말고 `logger.info/warning/error`를 쓸 것. `SENTRY_DSN`이 없으면 `sentry_sdk.init()`을 호출하지 않고, `sentry_sdk.capture_exception()`은 초기화 안 된 상태에서 호출해도 안전하게 no-op이므로 조건 분기 없이 그냥 호출해도 됨.
 
 **OAuth 토큰(`notion_token`/`kakao_refresh_token`/`google_calendar_refresh_token`)은 `db.py`의 `_encrypt()`/`_decrypt()`를 거쳐 저장/조회할 것**: `TOKEN_ENCRYPTION_KEY`가 있으면 Fernet으로 암호화해서 Redis에 저장하고, `get_settings()`가 자동으로 복호화해서 돌려줌 — 소비 측(`scheduler.py`/`kakao_client.py`/`notion_client.py`/`google_calendar_client.py`)은 여전히 평문 토큰을 받으므로 코드 변경 불필요. 키가 없으면 기존처럼 평문 저장(하위 호환, 필수 아님). 새 필드에 토큰류를 추가하면 `db.py`의 `SECRET_FIELDS`에도 추가할 것. `_decrypt()`는 `InvalidToken`(키를 이번에 처음 켠 경우 등 이전에 평문으로 저장된 값)일 때 에러 없이 원본 값을 그대로 반환하도록 설계돼 있음 — 이 fallback을 제거하면 기존 사용자 데이터를 읽다가 500이 남.
+
+**`require_login` 미들웨어에 새 공개 경로를 추가할 땐 접두사(prefix)도 고려할 것**: `PUBLIC_PATHS`는 정확히 일치하는 경로만 통과시키는 `set`이라, `/static/theme.css`처럼 하위 경로가 여러 개인 정적 파일은 하나씩 추가하는 대신 `PUBLIC_PATH_PREFIXES = ("/static/",)`처럼 접두사 매칭을 따로 둠. 로그인 페이지(`login.html`)가 이 CSS/JS를 쓰기 때문에 로그인 여부와 무관하게 통과해야 함 — 안 그러면 비로그인 사용자에게 로그인 페이지 자체가 스타일 없이(또는 무한 리다이렉트로) 깨져 보임.
+
+**세션에 잠깐 담았다가 한 번 읽고 지우는 값은 쿼리 파라미터 대신 `request.session.pop(key, None)` 플래시로 처리할 것**: 로그인 에러를 `/login?error=...`처럼 쿼리 파라미터로 넘기면 URL에 텍스트가 남아 새로고침/뒤로가기/공유 시 계속 노출됨. `request.session["login_error"] = "..."` 로 저장해두고 `/login` GET 핸들러에서 `pop()`으로 꺼내 쓰면, 한 번 보여준 뒤 자동으로 사라지고 URL에도 안 남음.
 
 **배포 전 로컬 사전 점검(실제 Redis 없이 가능)**:
 ```bash
