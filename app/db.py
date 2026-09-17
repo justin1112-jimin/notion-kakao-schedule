@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import redis
 
@@ -32,9 +33,25 @@ DEFAULTS = {
 }
 
 
+_client: Optional[redis.Redis] = None
+
+
 def get_client() -> redis.Redis:
-    redis_url = os.environ["REDIS_URL"]
-    return redis.from_url(redis_url, decode_responses=True)
+    """Redis 클라이언트 싱글턴 (최초 호출 시점에만 REDIS_URL을 읽고 연결을 재사용).
+
+    이전엔 호출할 때마다 새 연결을 만들어서 커넥션 낭비 + 타임아웃 미설정으로
+    Redis 응답이 느려지면 요청이 무한정 대기할 수 있었음.
+    """
+    global _client
+    if _client is None:
+        redis_url = os.environ["REDIS_URL"]
+        _client = redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_timeout=5,
+            socket_connect_timeout=5,
+        )
+    return _client
 
 
 def init_db():
