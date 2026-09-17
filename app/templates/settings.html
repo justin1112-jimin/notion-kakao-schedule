@@ -227,10 +227,13 @@
         연결 상태:
         {% if google_calendar_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
       </div>
-      {% if not google_calendar_connected %}
       <form action="/google-calendar/connect" method="get" style="margin-top: 12px;">
-        <button type="submit" class="secondary">Google Calendar 연결</button>
+        <button type="submit" class="secondary">Google Calendar {{ "재연결" if google_calendar_connected else "연결" }}</button>
       </form>
+      {% if google_calendar_connected %}
+      <p style="font-size: 12px; color: var(--muted); margin-top: 8px;">
+        일정이 안 오면 토큰이 만료됐을 수 있어요 — 위 버튼으로 다시 연결해보세요.
+      </p>
       {% endif %}
     </fieldset>
   </div>
