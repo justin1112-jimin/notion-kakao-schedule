@@ -43,27 +43,44 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
             )
 
         message_parts = []
+        failed_sources = []
         calendar_sources = settings.get("calendar_sources", "notion").split(",")
+        active_sources = [s for s in calendar_sources if s != "google" or settings.get("google_calendar_refresh_token")]
 
         if "notion" in calendar_sources:
-            items = notion_client.get_today_schedule(
-                settings["notion_token"],
-                settings["notion_database_id"],
-                settings["notion_date_property"],
-                settings["notion_title_property"],
-            )
-            notion_msg = notion_client.format_message(items)
-            if notion_msg:
-                message_parts.append(f"[Notion]\n{notion_msg}")
+            try:
+                items = notion_client.get_today_schedule(
+                    settings["notion_token"],
+                    settings["notion_database_id"],
+                    settings["notion_date_property"],
+                    settings["notion_title_property"],
+                )
+                notion_msg = notion_client.format_message(items)
+                if notion_msg:
+                    message_parts.append(f"[Notion]\n{notion_msg}")
+            except Exception:
+                failed_sources.append("Notion")
 
         if "google" in calendar_sources and settings.get("google_calendar_refresh_token"):
-            tokens = google_calendar_client.refresh_access_token(
-                settings["google_calendar_refresh_token"]
-            )
-            events = google_calendar_client.get_today_events(tokens["access_token"])
-            google_msg = google_calendar_client.format_google_events(events)
-            if google_msg:
-                message_parts.append(f"[Google Calendar]\n{google_msg}")
+            try:
+                tokens = google_calendar_client.refresh_access_token(
+                    settings["google_calendar_refresh_token"]
+                )
+                events = google_calendar_client.get_today_events(tokens["access_token"])
+                google_msg = google_calendar_client.format_google_events(events)
+                if google_msg:
+                    message_parts.append(f"[Google Calendar]\n{google_msg}")
+            except Exception:
+                failed_sources.append("Google Calendar")
+
+        # 활성화된 캘린더가 전부 조회 실패면 "오늘 일정이 없습니다"로 조용히
+        # 보내는 대신 명확하게 실패 처리 (겪었던 문제: 한쪽 캘린더 실패가 나머지
+        # 캘린더에서 이미 가져온 내용까지 같이 막아버리던 비대칭 동작을 방지).
+        if failed_sources and len(failed_sources) == len(active_sources):
+            raise Exception(f"캘린더 조회 실패: {', '.join(failed_sources)}")
+
+        if failed_sources:
+            message_parts.append(f"⚠️ {', '.join(failed_sources)} 조회 실패 — 재연결이 필요할 수 있어요")
 
         message = "\n\n".join(message_parts)
         if not message:
