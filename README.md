@@ -87,6 +87,7 @@ pytest tests/ -v
 | `CRON_SECRET` | GitHub Actions 백업 트리거 인증 (배포 시에만 필요) |
 | `SENTRY_DSN` | (선택) [Sentry](https://sentry.io) 에러 트래킹 — 비워두면 비활성화 |
 | `LOG_LEVEL` | (선택) 로그 레벨, 기본값 `INFO` |
+| `TOKEN_ENCRYPTION_KEY` | (선택, 강력 권장) OAuth 토큰 Redis 저장 시 암호화 키 — 비워두면 평문 저장(하위 호환) |
 
 ## 카카오 개발자 앱 설정 (필수, 앱 소유자가 한 번만)
 

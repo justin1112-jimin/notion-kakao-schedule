@@ -60,6 +60,7 @@ Upstash Redis (설정/토큰 저장)          Notion + Google Calendar 조회 �
 | `CRON_SECRET` | GitHub Actions 백업 트리거 인증 |
 | `SENTRY_DSN`(선택) | Sentry 에러 트래킹, 비워두면 비활성화 |
 | `LOG_LEVEL`(선택) | 로그 레벨, 기본값 INFO |
+| `TOKEN_ENCRYPTION_KEY`(선택, 강력 권장) | OAuth 토큰 Redis 저장 시 암호화 키, 비워두면 평문 저장 |
 
 ## 개발 시 지켜야 할 규칙 (겪었던 문제들에서 도출)
 
@@ -80,6 +81,8 @@ Upstash Redis (설정/토큰 저장)          Notion + Google Calendar 조회 �
 **`db.get_client()`처럼 외부 커넥션을 만드는 함수는 싱글턴으로 재사용할 것**: 호출할 때마다 새로 연결을 만들면 낭비고, 커넥션에 타임아웃도 안 걸려있으면 응답이 느려질 때 요청이 무한정 걸릴 수 있음. 모듈 레벨 캐시 변수로 최초 호출 시점에만 생성하고 재사용할 것(단, `os.environ["X"]`를 읽는 시점 자체는 여전히 최초 호출 때로 — import 시점에 읽지 않는다는 기존 규칙은 유지).
 
 **로깅은 `logging` 모듈로, 에러 트래킹은 `SENTRY_DSN` 선택적 연동으로**: `print`나 문자열 반환값에 의존하지 말고 `logger.info/warning/error`를 쓸 것. `SENTRY_DSN`이 없으면 `sentry_sdk.init()`을 호출하지 않고, `sentry_sdk.capture_exception()`은 초기화 안 된 상태에서 호출해도 안전하게 no-op이므로 조건 분기 없이 그냥 호출해도 됨.
+
+**OAuth 토큰(`notion_token`/`kakao_refresh_token`/`google_calendar_refresh_token`)은 `db.py`의 `_encrypt()`/`_decrypt()`를 거쳐 저장/조회할 것**: `TOKEN_ENCRYPTION_KEY`가 있으면 Fernet으로 암호화해서 Redis에 저장하고, `get_settings()`가 자동으로 복호화해서 돌려줌 — 소비 측(`scheduler.py`/`kakao_client.py`/`notion_client.py`/`google_calendar_client.py`)은 여전히 평문 토큰을 받으므로 코드 변경 불필요. 키가 없으면 기존처럼 평문 저장(하위 호환, 필수 아님). 새 필드에 토큰류를 추가하면 `db.py`의 `SECRET_FIELDS`에도 추가할 것. `_decrypt()`는 `InvalidToken`(키를 이번에 처음 켠 경우 등 이전에 평문으로 저장된 값)일 때 에러 없이 원본 값을 그대로 반환하도록 설계돼 있음 — 이 fallback을 제거하면 기존 사용자 데이터를 읽다가 500이 남.
 
 **배포 전 로컬 사전 점검(실제 Redis 없이 가능)**:
 ```bash

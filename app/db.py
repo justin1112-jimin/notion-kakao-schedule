@@ -1,7 +1,16 @@
+import logging
 import os
 from typing import Optional
 
 import redis
+from cryptography.fernet import Fernet, InvalidToken
+
+logger = logging.getLogger(__name__)
+
+# Redis에 평문으로 두면 안 되는 필드 (OAuth 토큰). TOKEN_ENCRYPTION_KEY가 없으면
+# 암호화 없이 기존처럼 평문 저장 — 필수 요구사항이 아니라 선택 강화라서
+# 설정 안 해도 앱은 정상 동작함(다른 선택적 연동과 동일한 패턴).
+SECRET_FIELDS = ("notion_token", "kakao_refresh_token", "google_calendar_refresh_token")
 
 def _get_settings_key(user_id: str) -> str:
     """사용자별 설정 키 생성"""
@@ -54,6 +63,43 @@ def get_client() -> redis.Redis:
     return _client
 
 
+_fernet: Optional[Fernet] = None
+_fernet_checked = False
+
+
+def _get_fernet() -> Optional[Fernet]:
+    """TOKEN_ENCRYPTION_KEY가 있으면 그 키로 Fernet 싱글턴을 만들어 반환,
+    없으면 None(암호화 비활성화)."""
+    global _fernet, _fernet_checked
+    if not _fernet_checked:
+        _fernet_checked = True
+        key = os.environ.get("TOKEN_ENCRYPTION_KEY")
+        if key:
+            _fernet = Fernet(key.encode())
+        else:
+            logger.warning("TOKEN_ENCRYPTION_KEY not set — OAuth 토큰이 Redis에 평문으로 저장됩니다")
+    return _fernet
+
+
+def _encrypt(value: str) -> str:
+    fernet = _get_fernet()
+    if not value or not fernet:
+        return value
+    return fernet.encrypt(value.encode()).decode()
+
+
+def _decrypt(value: str) -> str:
+    fernet = _get_fernet()
+    if not value or not fernet:
+        return value
+    try:
+        return fernet.decrypt(value.encode()).decode()
+    except InvalidToken:
+        # TOKEN_ENCRYPTION_KEY를 방금 켰다면, 이전에 평문으로 저장된 값일 수
+        # 있음 — 있는 그대로 반환(다음 저장 때 자동으로 암호화된 값으로 덮어써짐).
+        return value
+
+
 def init_db():
     """호환성 유지 (사용 안 함)"""
     pass
@@ -68,6 +114,8 @@ def get_settings(user_id: str) -> dict:
         client.hset(key, mapping=DEFAULTS)
     raw = client.hgetall(key)
     settings = {**DEFAULTS, **raw}
+    for field in SECRET_FIELDS:
+        settings[field] = _decrypt(settings[field])
     settings["notify_hour"] = int(settings["notify_hour"])
     settings["notify_minute"] = int(settings["notify_minute"])
     settings["last_sent_at"] = settings["last_sent_at"] or None
@@ -98,7 +146,7 @@ def update_notion_token(user_id: str, token: str):
     """OAuth 인증 후 Notion 액세스 토큰 저장"""
     client = get_client()
     key = _get_settings_key(user_id)
-    client.hset(key, "notion_token", token)
+    client.hset(key, "notion_token", _encrypt(token))
 
 
 def update_notion_database(user_id: str, database_id: str, date_property: str, title_property: str):
@@ -119,14 +167,14 @@ def update_kakao_refresh_token(user_id: str, token: str):
     """사용자별 카카오 토큰 저장"""
     client = get_client()
     key = _get_settings_key(user_id)
-    client.hset(key, "kakao_refresh_token", token)
+    client.hset(key, "kakao_refresh_token", _encrypt(token))
 
 
 def update_google_calendar_refresh_token(user_id: str, token: str):
     """사용자별 Google Calendar 토큰 저장"""
     client = get_client()
     key = _get_settings_key(user_id)
-    client.hset(key, "google_calendar_refresh_token", token)
+    client.hset(key, "google_calendar_refresh_token", _encrypt(token))
 
 
 def update_calendar_sources(user_id: str, sources: str):
