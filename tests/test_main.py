@@ -7,6 +7,7 @@
 
 import os
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -61,3 +62,69 @@ def test_login_error_flash_shows_once_then_clears(client):
 
     second = client.get("/login")
     assert "잘못된 요청입니다" not in second.text
+
+
+def _settings_dict(**overrides):
+    """db.get_settings()가 반환하는 것과 같은 모양의 dict (DEFAULTS 기반)."""
+    from app import db
+
+    settings = {**db.DEFAULTS}
+    settings["notify_hour"] = int(settings["notify_hour"])
+    settings["notify_minute"] = int(settings["notify_minute"])
+    settings["last_sent_at"] = None
+    settings["last_sent_status"] = None
+    settings.update(overrides)
+    return settings
+
+
+@pytest.fixture
+def logged_in_client(client):
+    """카카오 로그인 콜백을 거쳐 세션에 user_id="user1"이 저장된 클라이언트."""
+    with patch(
+        "app.kakao_client.exchange_code_for_tokens",
+        return_value={"access_token": "a", "refresh_token": "r"},
+    ), patch(
+        "app.kakao_client.fetch_user_info",
+        return_value={"user_id": "user1", "nickname": "테스트"},
+    ), patch("app.db.update_kakao_refresh_token"):
+        redirect = client.get("/login/kakao", follow_redirects=False)
+        state = parse_qs(urlparse(redirect.headers["location"]).query)["state"][0]
+        client.get("/auth/kakao/callback", params={"code": "x", "state": state}, follow_redirects=False)
+    return client
+
+
+def test_ical_connect_saves_valid_url(logged_in_client):
+    with patch("app.db.get_settings", return_value=_settings_dict(calendar_sources="notion")), \
+         patch("app.ical_client.get_today_events", return_value=[]), \
+         patch("app.db.update_ical_url") as mock_update_url, \
+         patch("app.db.update_calendar_sources") as mock_update_sources:
+        resp = logged_in_client.post(
+            "/ical/connect", data={"ical_url": "https://example.com/cal.ics"}, follow_redirects=False
+        )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/settings?flash=ical_connected"
+    mock_update_url.assert_called_once_with("user1", "https://example.com/cal.ics")
+    mock_update_sources.assert_called_once_with("user1", "notion,ical")
+
+
+def test_ical_connect_validation_failure_does_not_save(logged_in_client):
+    with patch("app.db.get_settings", return_value=_settings_dict(calendar_sources="notion")), \
+         patch("app.ical_client.get_today_events", side_effect=Exception("bad url")), \
+         patch("app.db.update_ical_url") as mock_update_url:
+        resp = logged_in_client.post("/ical/connect", data={"ical_url": "https://bad.example.com/x"})
+
+    assert "캘린더 URL을 확인할 수 없습니다" in resp.text
+    mock_update_url.assert_not_called()
+
+
+def test_ical_connect_empty_url_disconnects(logged_in_client):
+    with patch("app.db.get_settings", return_value=_settings_dict(calendar_sources="notion,ical")), \
+         patch("app.db.update_ical_url") as mock_update_url, \
+         patch("app.db.update_calendar_sources") as mock_update_sources:
+        resp = logged_in_client.post("/ical/connect", data={"ical_url": ""}, follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/settings?flash=ical_disconnected"
+    mock_update_url.assert_called_once_with("user1", "")
+    mock_update_sources.assert_called_once_with("user1", "notion")

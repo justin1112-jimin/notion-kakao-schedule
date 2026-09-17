@@ -113,3 +113,71 @@ def test_no_calendar_connected_raises():
          patch("app.scheduler.db.add_send_history"):
         with pytest.raises(scheduler.NoCalendarConnectedError):
             scheduler.run_daily_job("user1", source="manual")
+
+
+def test_ical_source_success_included_in_message():
+    """ICS 구독 소스가 성공하면 메시지에 [캘린더 구독] 블록이 포함된다."""
+    settings = {
+        **BASE_SETTINGS,
+        "ical_url": "https://example.com/calendar.ics",
+        "calendar_sources": "notion,google,ical",
+    }
+    with patch("app.scheduler.db.get_settings", return_value=settings), \
+         patch("app.scheduler.db.update_kakao_refresh_token"), \
+         patch("app.scheduler.db.record_send_result"), \
+         patch("app.scheduler.db.add_send_history"), \
+         patch("app.scheduler.db.record_source_success"), \
+         patch("app.scheduler.notion_client.get_today_schedule", return_value=["item"]), \
+         patch("app.scheduler.notion_client.format_message", return_value="노션 일정"), \
+         patch(
+             "app.scheduler.google_calendar_client.refresh_access_token",
+             return_value={"access_token": "g"},
+         ), \
+         patch("app.scheduler.google_calendar_client.get_today_events", return_value=["event"]), \
+         patch(
+             "app.scheduler.google_calendar_client.format_google_events",
+             return_value="구글 일정",
+         ), \
+         patch("app.scheduler.ical_client.get_today_events", return_value=["event"]), \
+         patch("app.scheduler.ical_client.format_ical_events", return_value="구독 일정"), \
+         patch(
+             "app.scheduler.kakao_client.refresh_kakao_access_token",
+             return_value={"access_token": "a"},
+         ), \
+         patch("app.scheduler.kakao_client.send_kakao_memo"):
+        result = scheduler.run_daily_job("user1", source="manual")
+
+    assert "[캘린더 구독]" in result
+    assert "구독 일정" in result
+    assert "조회 실패" not in result
+
+
+def test_ical_only_connected_does_not_raise_no_calendar_error():
+    """Notion/Google 둘 다 미연결이어도 ical_url만 있으면 NoCalendarConnectedError가 아니다.
+
+    active_sources/최초 가드가 세 소스를 OR로 묶는 로직이라, 이 조건 하나를
+    빠뜨리면 ICS만 연결한 사용자가 매번 "연결된 일정 서비스가 없습니다"로
+    실패하는 회귀가 생길 수 있음.
+    """
+    settings = {
+        **BASE_SETTINGS,
+        "notion_token": "",
+        "google_calendar_refresh_token": "",
+        "ical_url": "https://example.com/calendar.ics",
+        "calendar_sources": "ical",
+    }
+    with patch("app.scheduler.db.get_settings", return_value=settings), \
+         patch("app.scheduler.db.update_kakao_refresh_token"), \
+         patch("app.scheduler.db.record_send_result"), \
+         patch("app.scheduler.db.add_send_history"), \
+         patch("app.scheduler.db.record_source_success"), \
+         patch("app.scheduler.ical_client.get_today_events", return_value=["event"]), \
+         patch("app.scheduler.ical_client.format_ical_events", return_value="구독 일정"), \
+         patch(
+             "app.scheduler.kakao_client.refresh_kakao_access_token",
+             return_value={"access_token": "a"},
+         ), \
+         patch("app.scheduler.kakao_client.send_kakao_memo"):
+        result = scheduler.run_daily_job("user1", source="manual")
+
+    assert "구독 일정" in result

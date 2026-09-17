@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import db, google_calendar_client, kakao_client, notion_client, scheduler
+from app import db, google_calendar_client, ical_client, kakao_client, notion_client, scheduler
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -85,6 +85,7 @@ def _render_settings(request: Request, **extra):
         "notion_databases": notion_databases,
         "kakao_connected": bool(settings["kakao_refresh_token"]),
         "google_calendar_connected": bool(settings["google_calendar_refresh_token"]),
+        "ical_connected": bool(settings["ical_url"]),
         **extra,
     }
     return templates.TemplateResponse(request=request, name="settings.html", context=context)
@@ -225,6 +226,35 @@ async def google_calendar_callback(request: Request, code: str, state: str):
     return RedirectResponse("/settings?flash=google_calendar_connected", status_code=303)
 
 
+@app.post("/ical/connect")
+async def ical_connect(request: Request, ical_url: str = Form("")):
+    user_id = _get_user_id(request)
+    ical_url = ical_url.strip()
+    current_sources = [s for s in db.get_settings(user_id)["calendar_sources"].split(",") if s]
+
+    if not ical_url:
+        db.update_ical_url(user_id, "")
+        db.update_calendar_sources(user_id, ",".join(s for s in current_sources if s != "ical") or "notion")
+        return RedirectResponse("/settings?flash=ical_disconnected", status_code=303)
+
+    if ical_url.startswith("webcal://"):
+        ical_url = ical_url.replace("webcal://", "https://", 1)
+
+    try:
+        ical_client.get_today_events(ical_url)  # 저장 전에 실제로 파싱되는지 검증
+    except Exception as e:
+        logger.warning("ical url validation failed user=%s: %s", user_id, e)
+        return _render_settings(
+            request, ical_error="캘린더 URL을 확인할 수 없습니다. 공개 공유 URL이 맞는지 확인해주세요."
+        )
+
+    db.update_ical_url(user_id, ical_url)
+    if "ical" not in current_sources:
+        current_sources.append("ical")
+    db.update_calendar_sources(user_id, ",".join(current_sources))
+    return RedirectResponse("/settings?flash=ical_connected", status_code=303)
+
+
 @app.post("/preview")
 async def preview(request: Request):
     user_id = _get_user_id(request)
@@ -286,6 +316,7 @@ async def status_page(request: Request):
         "notion_connected": bool(settings["notion_token"]),
         "kakao_connected": bool(settings["kakao_refresh_token"]),
         "google_calendar_connected": bool(settings["google_calendar_refresh_token"]),
+        "ical_connected": bool(settings["ical_url"]),
         "already_sent_today": scheduler.already_sent_today(user_id),
         "next_run_at": next_run_at,
     }

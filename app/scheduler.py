@@ -7,7 +7,7 @@ import sentry_sdk
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app import db, google_calendar_client, kakao_client, notion_client
+from app import db, google_calendar_client, ical_client, kakao_client, notion_client
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +42,23 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
     now = datetime.now(KST).isoformat()
     logger.info("daily job start user=%s source=%s", user_id, source)
     try:
-        if not settings.get("notion_token") and not settings.get("google_calendar_refresh_token"):
+        if (
+            not settings.get("notion_token")
+            and not settings.get("google_calendar_refresh_token")
+            and not settings.get("ical_url")
+        ):
             raise NoCalendarConnectedError(
-                "연결된 일정 서비스가 없습니다. Notion 또는 Google Calendar를 먼저 연결해주세요."
+                "연결된 일정 서비스가 없습니다. Notion, Google Calendar, 캘린더 구독(ICS) 중 하나를 먼저 연결해주세요."
             )
 
         message_parts = []
         failed_sources = []
         calendar_sources = settings.get("calendar_sources", "notion").split(",")
-        active_sources = [s for s in calendar_sources if s != "google" or settings.get("google_calendar_refresh_token")]
+        active_sources = [
+            s for s in calendar_sources
+            if (s != "google" or settings.get("google_calendar_refresh_token"))
+            and (s != "ical" or settings.get("ical_url"))
+        ]
 
         if "notion" in calendar_sources:
             try:
@@ -81,6 +89,17 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
             except Exception as e:
                 logger.warning("google calendar fetch failed user=%s: %s", user_id, e)
                 failed_sources.append("Google Calendar")
+
+        if "ical" in calendar_sources and settings.get("ical_url"):
+            try:
+                events = ical_client.get_today_events(settings["ical_url"])
+                ical_msg = ical_client.format_ical_events(events)
+                if ical_msg:
+                    message_parts.append(f"[캘린더 구독]\n{ical_msg}")
+                db.record_source_success(user_id, "ical", now)
+            except Exception as e:
+                logger.warning("ical fetch failed user=%s: %s", user_id, e)
+                failed_sources.append("캘린더 구독")
 
         # 활성화된 캘린더가 전부 조회 실패면 "오늘 일정이 없습니다"로 조용히
         # 보내는 대신 명확하게 실패 처리 (겪었던 문제: 한쪽 캘린더 실패가 나머지

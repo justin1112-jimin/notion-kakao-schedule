@@ -138,6 +138,9 @@
   {% if flash == "notion_database_selected" %}<div class="flash">✅ 데이터베이스가 선택되었습니다.</div>{% endif %}
   {% if flash == "notion_select_database" %}<div class="flash">✅ Notion 연결 완료 — 아래에서 사용할 데이터베이스를 선택해주세요.</div>{% endif %}
   {% if flash == "notion_no_database" %}<div class="flash" style="background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad-fg);">⚠️ 공유된 데이터베이스가 없습니다. "Notion 연결"을 다시 눌러 최소 하나를 선택해주세요.</div>{% endif %}
+  {% if flash == "ical_connected" %}<div class="flash">✅ 캘린더 구독이 연결되었습니다.</div>{% endif %}
+  {% if flash == "ical_disconnected" %}<div class="flash">✅ 캘린더 구독을 해제했습니다.</div>{% endif %}
+  {% if ical_error %}<div class="flash" style="background: var(--bad-bg); border-color: var(--bad-border); color: var(--bad-fg);">⚠️ {{ ical_error }}</div>{% endif %}
 
   <div class="card">
     <fieldset>
@@ -208,6 +211,32 @@
       </p>
       {% endif %}
     </fieldset>
+
+    <fieldset>
+      <legend>캘린더 구독 (ICS, 선택)</legend>
+      <p style="font-size: 13px; color: var(--muted); margin-bottom: 12px;">
+        Apple Calendar, Outlook 등에서 내보낸 공개 캘린더 URL(.ics)을 구독해 일정을 함께 받아보세요
+      </p>
+      <div class="status-line">
+        연결 상태:
+        {% if ical_connected %}<span class="badge ok">✅ 연결됨</span>{% else %}<span class="badge bad">❌ 미연결</span>{% endif %}
+      </div>
+      {% if ical_connected %}
+      <p style="font-size: 12px; color: var(--muted); margin-top: 4px;">
+        마지막 조회 성공: {{ settings.ical_last_success_at[:19] if settings.ical_last_success_at else "없음 (한 번도 성공한 적 없음)" }}
+      </p>
+      {% endif %}
+      <form action="/ical/connect" method="post" style="margin-top: 12px;">
+        <input type="url" name="ical_url" placeholder="https://.../calendar.ics" value="{{ settings.ical_url }}"
+               style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--input-bg); color: var(--text);">
+        <button type="submit" class="secondary" style="margin-top: 12px;">{{ "URL 갱신" if ical_connected else "연결" }}</button>
+      </form>
+      {% if ical_connected %}
+      <p style="font-size: 12px; color: var(--muted); margin-top: 8px;">
+        연결을 해제하려면 URL 칸을 비우고 저장하세요.
+      </p>
+      {% endif %}
+    </fieldset>
   </div>
 
   <div class="card">
@@ -262,7 +291,7 @@
 
 </div>
 {% if show_no_calendar_alert %}
-<script>alert("연결된 일정 서비스가 없습니다. Notion 또는 Google Calendar를 먼저 연결해주세요.");</script>
+<script>alert("연결된 일정 서비스가 없습니다. Notion, Google Calendar, 캘린더 구독(ICS) 중 하나를 먼저 연결해주세요.");</script>
 {% endif %}
 <script src="/static/theme.js"></script>
 </body>

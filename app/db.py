@@ -7,10 +7,11 @@ from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger(__name__)
 
-# Redis에 평문으로 두면 안 되는 필드 (OAuth 토큰). TOKEN_ENCRYPTION_KEY가 없으면
-# 암호화 없이 기존처럼 평문 저장 — 필수 요구사항이 아니라 선택 강화라서
-# 설정 안 해도 앱은 정상 동작함(다른 선택적 연동과 동일한 패턴).
-SECRET_FIELDS = ("notion_token", "kakao_refresh_token", "google_calendar_refresh_token")
+# Redis에 평문으로 두면 안 되는 필드 (OAuth 토큰, ICS 구독 URL 등 사실상의 bearer
+# credential). TOKEN_ENCRYPTION_KEY가 없으면 암호화 없이 기존처럼 평문 저장 —
+# 필수 요구사항이 아니라 선택 강화라서 설정 안 해도 앱은 정상 동작함(다른 선택적
+# 연동과 동일한 패턴).
+SECRET_FIELDS = ("notion_token", "kakao_refresh_token", "google_calendar_refresh_token", "ical_url")
 
 def _get_settings_key(user_id: str) -> str:
     """사용자별 설정 키 생성"""
@@ -36,9 +37,11 @@ DEFAULTS = {
     "last_sent_at": "",
     "last_sent_status": "",
     "google_calendar_refresh_token": "",
-    "calendar_sources": "notion",  # "notion" | "google" | "notion,google"
+    "calendar_sources": "notion",  # "notion" | "google" | "ical" 의 콤마 조합
     "notion_last_success_at": "",
     "google_calendar_last_success_at": "",
+    "ical_url": "",
+    "ical_last_success_at": "",
 }
 
 
@@ -175,6 +178,13 @@ def update_google_calendar_refresh_token(user_id: str, token: str):
     client = get_client()
     key = _get_settings_key(user_id)
     client.hset(key, "google_calendar_refresh_token", _encrypt(token))
+
+
+def update_ical_url(user_id: str, url: str):
+    """사용자별 ICS 구독 URL 저장 (빈 문자열이면 연결 해제)"""
+    client = get_client()
+    key = _get_settings_key(user_id)
+    client.hset(key, "ical_url", _encrypt(url))
 
 
 def update_calendar_sources(user_id: str, sources: str):
