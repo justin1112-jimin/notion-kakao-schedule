@@ -5,6 +5,8 @@ Notion(과 선택적으로 Google Calendar)에서 **오늘 날짜의 일정**을
 
 - **v1 (완료)**: FastAPI 웹앱(Render 배포) + Notion/카카오 OAuth + GitHub Actions 백업 트리거 — 기본 기능 완성
 - **v2 (완료)**: 발송 이력 대시보드(다크모드 포함) + 다중 사용자 자동 발송 실제 지원(사용자별 개별 스케줄) + `/status` 상태 확인 페이지 + 오픈소스 공개
+  - **v2.1**: 카카오 API rate limit 대응(429 재시도/백오프), GitHub Pages 소개 페이지 공개
+  - **v2.2**: 캘린더 소스별 부분 실패 처리(한쪽 실패가 전체 발송을 막지 않도록), Redis 클라이언트 싱글턴화, 구조화 로깅 + 선택적 Sentry 에러 트래킹, pytest 회귀 테스트 + CI
 - **v3 (예정)**: 대시보드 시각화 고도화(Chart.js 등) + Capacitor로 하이브리드 앱 패키징(iOS/Android) — 백로그, 아직 착수 전
 
 세부 실행/배포 방법은 `README.md` 참고.
@@ -26,15 +28,18 @@ Upstash Redis (설정/토큰 저장)          Notion + Google Calendar 조회 �
 ## 파일 구성
 | 파일 | 역할 |
 |---|---|
-| `app/main.py` | FastAPI 앱, 전체 라우트 |
-| `app/db.py` | Redis 저장소, 키 구조 `user:{카카오 id}:*` |
-| `app/kakao_client.py` | 카카오 로그인 + 메시지 전송 |
+| `app/main.py` | FastAPI 앱, 전체 라우트, 로깅/Sentry 초기화 |
+| `app/db.py` | Redis 저장소(싱글턴 클라이언트), 키 구조 `user:{카카오 id}:*` |
+| `app/kakao_client.py` | 카카오 로그인 + 메시지 전송 (429 재시도/백오프 포함) |
 | `app/notion_client.py` | Notion OAuth + 일정 조회 (속성 자동 감지) |
 | `app/google_calendar_client.py` | Google Calendar OAuth + 일정 조회 |
-| `app/scheduler.py` | APScheduler, `run_daily_job(user_id, source)` |
+| `app/scheduler.py` | APScheduler, `run_daily_job(user_id, source)` — 캘린더 소스별 부분 실패 처리 |
 | `app/templates/login.html` | 로그인 페이지 (카카오) |
 | `app/templates/settings.html` | 설정 페이지 (Notion/카카오/Google Calendar 연결) |
 | `app/templates/dashboard.html` | 발송 이력 대시보드 |
+| `app/templates/status.html` | 저장된 설정 vs 스케줄러 실제 예약 시각 비교 |
+| `docs/` | GitHub Pages 소개/가이드 페이지 (정적 HTML, 별도 배포 파이프라인 없음) |
+| `tests/` | pytest 회귀 테스트, push/PR마다 GitHub Actions(`test.yml`)로 자동 실행 |
 
 ## 인증/연동 방식
 - **로그인 = 카카오 로그인 하나**. `talk_message` 동의를 함께 받아서 로그인이 곧 카카오 메시지 발송 연결(별도의 "카카오 연결" 단계 없음)
@@ -53,6 +58,8 @@ Upstash Redis (설정/토큰 저장)          Notion + Google Calendar 조회 �
 | `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` | Notion OAuth |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar OAuth (로그인용 아님) |
 | `CRON_SECRET` | GitHub Actions 백업 트리거 인증 |
+| `SENTRY_DSN`(선택) | Sentry 에러 트래킹, 비워두면 비활성화 |
+| `LOG_LEVEL`(선택) | 로그 레벨, 기본값 INFO |
 
 ## 개발 시 지켜야 할 규칙 (겪었던 문제들에서 도출)
 
@@ -64,13 +71,23 @@ Upstash Redis (설정/토큰 저장)          Notion + Google Calendar 조회 �
 
 **`run_daily_job()`은 캘린더별 미연결 가드를 대칭으로 둘 것**: 한쪽 캘린더만 미연결 체크를 하고 다른 쪽은 체크 없이 바로 API를 호출하면, 후자가 원인 불명의 400/에러로 실패함. 두 캘린더 모두 미연결이면 명확한 에러(`NoCalendarConnectedError`)로 실패하게 만들 것.
 
+**캘린더 소스별 조회는 각각 try/except로 감쌀 것, 한쪽 실패가 전체 발송을 막으면 안 됨**: 실제로 겪은 버그 — Google Calendar 리프레시 토큰이 무효화되어 `refresh_access_token()`이 예외를 던졌는데, 이게 잡히지 않고 그대로 전파되면서 이미 조회에 성공한 Notion 일정까지 통째로 발송이 취소됨(GitHub Actions 백업 트리거 로그의 "400 Client Error"로 발견). 지금은 소스별로 개별 실패 처리하고, 활성화된 소스가 전부 실패했을 때만 명확하게 예외를 던짐.
+
+**"✅ 연결됨" 배지는 토큰 존재 여부만 확인, 유효성은 안 봄 — 재연결 UI는 연결 상태와 무관하게 항상 노출할 것**: Google Calendar 재연결 버튼이 `{% if not google_calendar_connected %}`로 감싸져 있어서, 토큰이 죽어도 배지는 계속 "연결됨"으로 보이고 재연결할 방법 자체가 화면에서 사라지는 버그가 있었음. 연결 여부 배지는 항상 보여주되, 재연결 버튼/링크는 연결 상태와 무관하게 항상 노출하고, 가능하면 "마지막 성공 시각"처럼 실제 작동 여부를 보여주는 신호를 같이 둘 것.
+
+**외부 API 호출(`requests.get/post`)에는 항상 `timeout`을 명시할 것**: `kakao_client.py`/`notion_client.py`는 처음부터 `timeout=10`을 넣었는데 `google_calendar_client.py`만 빠져있던 적이 있음. 타임아웃이 없으면 그 API가 느려질 때 해당 사용자의 요청(특히 APScheduler 스레드풀에서 도는 발송 작업)이 무한정 대기하며 다른 사용자 작업까지 지연시킬 수 있음.
+
+**`db.get_client()`처럼 외부 커넥션을 만드는 함수는 싱글턴으로 재사용할 것**: 호출할 때마다 새로 연결을 만들면 낭비고, 커넥션에 타임아웃도 안 걸려있으면 응답이 느려질 때 요청이 무한정 걸릴 수 있음. 모듈 레벨 캐시 변수로 최초 호출 시점에만 생성하고 재사용할 것(단, `os.environ["X"]`를 읽는 시점 자체는 여전히 최초 호출 때로 — import 시점에 읽지 않는다는 기존 규칙은 유지).
+
+**로깅은 `logging` 모듈로, 에러 트래킹은 `SENTRY_DSN` 선택적 연동으로**: `print`나 문자열 반환값에 의존하지 말고 `logger.info/warning/error`를 쓸 것. `SENTRY_DSN`이 없으면 `sentry_sdk.init()`을 호출하지 않고, `sentry_sdk.capture_exception()`은 초기화 안 된 상태에서 호출해도 안전하게 no-op이므로 조건 분기 없이 그냥 호출해도 됨.
+
 **배포 전 로컬 사전 점검(실제 Redis 없이 가능)**:
 ```bash
 REDIS_URL=redis://localhost:6379 SESSION_SECRET_KEY=x GOOGLE_CLIENT_ID=x GOOGLE_CLIENT_SECRET=x \
 CRON_SECRET=x KAKAO_REST_API_KEY=x NOTION_CLIENT_ID=x NOTION_CLIENT_SECRET=x \
   python3 -c "from app import main; print([r.path for r in main.app.routes if hasattr(r,'path')])"
 ```
-import 에러나 라우트 등록 누락을 실제 인프라 없이 바로 잡을 수 있음. 템플릿 쪽은 `Jinja2Templates(directory='app/templates').get_template('settings.html').render(**mock_context)`로 목업 컨텍스트를 채워 렌더링해보면 Jinja 문법 오류를 배포 전에 잡을 수 있음.
+import 에러나 라우트 등록 누락을 실제 인프라 없이 바로 잡을 수 있음. 템플릿 쪽은 `Jinja2Templates(directory='app/templates').get_template('settings.html').render(**mock_context)`로 목업 컨텍스트를 채워 렌더링해보면 Jinja 문법 오류를 배포 전에 잡을 수 있음. `run_daily_job()`처럼 크리티컬한 로직을 고칠 때는 `pytest tests/ -v`도 같이 돌릴 것(`tests/` 참고, Redis/외부 API는 전부 mock이라 인프라 없이 즉시 실행 가능).
 
 **배포 후 검증은 curl로 직접**: 로그인 세션이 필요한 라우트가 미로그인 상태에서 302/307을 반환하면 정상, 500이면 문제(대개 최근 추가한 env var 누락). Claude Code에는 브라우저 자동화가 붙어있지 않은 경우가 많아 OAuth 동의 화면이나 실제 발송 결과는 사람이 직접 클릭/확인해야 함.
 

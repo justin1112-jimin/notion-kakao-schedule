@@ -1,6 +1,6 @@
 # Notion → 카카오톡 오늘 일정 알림
 
-**버전**: v2.1 · [소개 페이지](https://justin1112-jimin.github.io/notion-kakao-schedule/)
+**버전**: v2.2 · [소개 페이지](https://justin1112-jimin.github.io/notion-kakao-schedule/)
 
 Notion(과 선택적으로 Google Calendar)에서 오늘 날짜의 일정을 가져와, 매일 아침 카카오톡 "나에게 보내기"로 요약해서 보내주는 개인용 자동화 도구입니다.
 
@@ -10,17 +10,21 @@ FastAPI 웹앱으로 만들어져 있고, 카카오 로그인 하나로 신원 �
 ```
 notion-kakao-schedule/
 ├── app/
-│   ├── main.py                    # FastAPI 앱, 전체 라우트
-│   ├── db.py                      # Redis(Upstash) 저장소 (사용자별 설정/토큰/발송 이력)
+│   ├── main.py                    # FastAPI 앱, 전체 라우트 + 로깅/Sentry 초기화
+│   ├── db.py                      # Redis(Upstash) 저장소 (싱글턴 클라이언트, 사용자별 설정/토큰/발송 이력)
 │   ├── notion_client.py           # Notion OAuth + 일정 조회 (date/title 속성 자동 감지)
-│   ├── kakao_client.py            # 카카오 로그인 + 메시지 전송
+│   ├── kakao_client.py            # 카카오 로그인 + 메시지 전송 (429 재시도/백오프 포함)
 │   ├── google_calendar_client.py  # Google Calendar OAuth + 일정 조회 (선택 기능)
-│   ├── scheduler.py                # APScheduler 기반 매일 알림 스케줄러
+│   ├── scheduler.py               # APScheduler 기반 매일 알림 스케줄러, 캘린더 소스별 부분 실패 처리
 │   └── templates/
 │       ├── login.html             # 로그인 페이지 (카카오)
 │       ├── settings.html          # 설정 페이지 (Notion/카카오/Google Calendar 연결)
-│       └── dashboard.html         # 발송 이력 대시보드
+│       ├── dashboard.html         # 발송 이력 대시보드
+│       └── status.html            # 저장된 설정 vs 스케줄러 실제 예약 시각 비교
+├── docs/                          # GitHub Pages 소개 페이지 (index.html/guide.html/style.css)
+├── tests/                         # pytest 회귀 테스트 (scheduler.py/db.py) — push/PR마다 CI로 자동 실행
 ├── requirements.txt
+├── requirements-dev.txt           # requirements.txt + pytest
 └── _v1_backup/               # (gitignore) v1 로컬 스크립트 백업, 배포엔 미포함
 ```
 
@@ -60,6 +64,15 @@ GOOGLE_CLIENT_ID="..." GOOGLE_CLIENT_SECRET="..." \
 ```
 
 브라우저에서 http://localhost:8000 접속 → `/login`으로 자동 리다이렉트 → **카카오로 로그인** (로그인 자체가 카카오 메시지 발송 동의까지 포함) → `/settings`에서 Notion 연결.
+
+## 테스트
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+실제 Redis/외부 API 없이 전부 mock으로 도는 회귀 테스트입니다(`scheduler.py`의 캘린더 소스별 부분 실패 처리, `db.py`의 Redis 클라이언트 싱글턴 동작 등). `main` 브랜치에 push하거나 PR을 열면 GitHub Actions(`.github/workflows/test.yml`)가 자동으로 실행합니다.
 
 ## 환경변수
 
@@ -161,6 +174,14 @@ Render 무료 Postgres는 30일 후 만료되지만, Upstash Redis 무료 티어
 
 ## 변경 이력
 
+- **v2.2**: 신뢰성/관측성 강화 릴리스.
+  - `run_daily_job()`이 Notion/Google Calendar 중 한쪽 조회에 실패해도 나머지 소스는 정상 발송하도록 수정 (이전엔 한쪽 실패가 이미 조회된 내용까지 통째로 막아버렸음)
+  - Google Calendar "재연결" 버튼이 토큰이 살아있는 것처럼 보일 때(실제로는 만료됐어도) 화면에서 사라지던 버그 수정, 연결 배지 옆에 "마지막 조회 성공" 시각 표시
+  - `google_calendar_client.py`의 누락된 API 요청 timeout 추가
+  - Redis 클라이언트를 싱글턴으로 전환 + 타임아웃 추가 (`db.py`)
+  - `logging` 모듈 기반 구조화 로깅 + 선택적 [Sentry](https://sentry.io) 에러 트래킹(`SENTRY_DSN`) 추가
+  - pytest 회귀 테스트 + GitHub Actions CI(`test.yml`) 추가
+  - GitHub Pages 소개/가이드 페이지 공개
 - **v2.1**: 카카오 API 요청이 순간적으로 몰릴 때(예: 여러 사용자가 같은 알림 시각으로 설정)를 대비한 안전장치 추가 — 429(rate limit) 응답 시 지수 백오프로 자동 재시도(`kakao_client.py`), 백업 트리거(`/internal/run-daily`)가 여러 사용자를 순회할 때 사용자 간 짧은 딜레이를 둠.
 - **v2.0**: 발송 이력 대시보드, 다크모드, 다중 사용자 자동 발송, `/status` 상태 확인 페이지, 오픈소스 공개.
 
