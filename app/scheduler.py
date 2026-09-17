@@ -1,11 +1,15 @@
+import logging
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import sentry_sdk
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app import db, google_calendar_client, kakao_client, notion_client
+
+logger = logging.getLogger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
 JOB_ID = "daily_notify"
@@ -36,6 +40,7 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
     """
     settings = db.get_settings(user_id)
     now = datetime.now(KST).isoformat()
+    logger.info("daily job start user=%s source=%s", user_id, source)
     try:
         if not settings.get("notion_token") and not settings.get("google_calendar_refresh_token"):
             raise NoCalendarConnectedError(
@@ -59,7 +64,8 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
                 if notion_msg:
                     message_parts.append(f"[Notion]\n{notion_msg}")
                 db.record_source_success(user_id, "notion", now)
-            except Exception:
+            except Exception as e:
+                logger.warning("notion fetch failed user=%s: %s", user_id, e)
                 failed_sources.append("Notion")
 
         if "google" in calendar_sources and settings.get("google_calendar_refresh_token"):
@@ -72,7 +78,8 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
                 if google_msg:
                     message_parts.append(f"[Google Calendar]\n{google_msg}")
                 db.record_source_success(user_id, "google_calendar", now)
-            except Exception:
+            except Exception as e:
+                logger.warning("google calendar fetch failed user=%s: %s", user_id, e)
                 failed_sources.append("Google Calendar")
 
         # 활성화된 캘린더가 전부 조회 실패면 "오늘 일정이 없습니다"로 조용히
@@ -97,9 +104,12 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
         kakao_client.send_kakao_memo(tokens["access_token"], message, link_url)
         db.record_send_result(user_id, "success", now)
         db.add_send_history(user_id, now, "success", source)
+        logger.info("daily job success user=%s source=%s", user_id, source)
         return message
     except Exception as e:
         error_msg = str(e)
+        logger.error("daily job failed user=%s source=%s: %s", user_id, source, error_msg)
+        sentry_sdk.capture_exception(e)
         db.record_send_result(user_id, f"error: {error_msg}", now)
         db.add_send_history(user_id, now, "failed", source, _sanitize_error(error_msg))
         raise

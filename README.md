@@ -72,6 +72,8 @@ GOOGLE_CLIENT_ID="..." GOOGLE_CLIENT_SECRET="..." \
 | `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` | Notion OAuth 공개 통합 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Calendar 연동용 (로그인용 아님) |
 | `CRON_SECRET` | GitHub Actions 백업 트리거 인증 (배포 시에만 필요) |
+| `SENTRY_DSN` | (선택) [Sentry](https://sentry.io) 에러 트래킹 — 비워두면 비활성화 |
+| `LOG_LEVEL` | (선택) 로그 레벨, 기본값 `INFO` |
 
 ## 카카오 개발자 앱 설정 (필수, 앱 소유자가 한 번만)
 

@@ -1,15 +1,28 @@
+import logging
 import os
 import secrets
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import sentry_sdk
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import db, google_calendar_client, kakao_client, notion_client, scheduler
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# 둘 다 선택 사항 — 안 넣으면 그냥 조용히 비활성화됨 (다른 OAuth 연동과 동일한 패턴)
+if os.environ.get("SENTRY_DSN"):
+    sentry_sdk.init(dsn=os.environ["SENTRY_DSN"], traces_sample_rate=0.0)
+    logger.info("Sentry error tracking enabled")
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -95,11 +108,13 @@ async def login_kakao(request: Request):
 @app.get("/auth/kakao/callback", name="kakao_login_callback")
 async def kakao_login_callback(request: Request, code: str, state: str):
     if state != request.session.get("oauth_state"):
+        logger.warning("kakao login state mismatch")
         return RedirectResponse("/login?error=잘못된 요청입니다. 다시 로그인해주세요.")
 
     redirect_uri = str(request.url_for("kakao_login_callback"))
     tokens = kakao_client.exchange_code_for_tokens(redirect_uri, code)
     user_info = kakao_client.fetch_user_info(tokens["access_token"])
+    logger.info("kakao login success user=%s", user_info["user_id"])
 
     request.session["logged_in"] = True
     request.session["user_id"] = user_info["user_id"]
@@ -290,8 +305,10 @@ async def internal_run_daily(request: Request):
     한 명이라도 실패하면 500을 반환해 GitHub Actions가 저장소 소유자에게 이메일로 알리게 한다.
     """
     if request.headers.get("X-Cron-Secret") != os.environ["CRON_SECRET"]:
+        logger.warning("run-daily called with invalid cron secret")
         return PlainTextResponse("unauthorized", status_code=401)
 
+    logger.info("backup trigger started")
     results = []
     any_failed = False
     for user_id in db.get_all_user_ids():
