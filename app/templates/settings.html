@@ -231,6 +231,14 @@
                style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--input-bg); color: var(--text);">
         <button type="submit" class="secondary" style="margin-top: 12px;">{{ "URL 갱신" if ical_connected else "연결" }}</button>
       </form>
+      <details style="margin-top: 10px; font-size: 12px; color: var(--muted);">
+        <summary style="cursor: pointer;">URL을 어디서 찾나요?</summary>
+        <ul style="margin: 8px 0 0; padding-left: 18px; line-height: 1.7;">
+          <li><strong>Apple Calendar:</strong> 캘린더 앱에서 캘린더 우클릭 → "공유 설정" → "공개 캘린더" 켜기 → 표시되는 링크 복사</li>
+          <li><strong>Outlook:</strong> 캘린더 설정 → "캘린더 게시" → 권한 선택 후 게시 → 발급된 ICS 링크 복사</li>
+          <li><strong>Google Calendar:</strong> 설정 → 구독할 캘린더 선택 → "캘린더 통합" 항목의 비공개(또는 공개) 주소 복사</li>
+        </ul>
+      </details>
       {% if ical_connected %}
       <p style="font-size: 12px; color: var(--muted); margin-top: 8px;">
         연결을 해제하려면 URL 칸을 비우고 저장하세요.
