@@ -39,6 +39,7 @@ def exchange_code_for_tokens(redirect_uri: str, code: str) -> dict:
             "grant_type": "authorization_code",
             "redirect_uri": redirect_uri,
         },
+        timeout=10,
     )
     response.raise_for_status()
     return response.json()
@@ -54,6 +55,7 @@ def refresh_access_token(refresh_token: str) -> dict:
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
         },
+        timeout=10,
     )
     response.raise_for_status()
     return response.json()
@@ -74,6 +76,7 @@ def get_today_events(access_token: str) -> list:
             "singleEvents": True,
             "orderBy": "startTime",
         },
+        timeout=10,
     )
     response.raise_for_status()
     return response.json().get("items", [])
