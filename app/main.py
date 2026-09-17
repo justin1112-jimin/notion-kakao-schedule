@@ -8,6 +8,7 @@ from typing import Optional
 import sentry_sdk
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -29,6 +30,8 @@ templates = Jinja2Templates(directory="app/templates")
 # "/internal/run-daily" skips the login session check but enforces its own
 # secret-header check inside the handler (called by GitHub Actions, not a browser).
 PUBLIC_PATHS = {"/login", "/login/kakao", "/auth/kakao/callback", "/internal/run-daily"}
+# 로그인 페이지 자체가 이 정적 파일(테마 CSS/JS)을 쓰므로 로그인 없이도 접근 가능해야 함.
+PUBLIC_PATH_PREFIXES = ("/static/",)
 
 
 @asynccontextmanager
@@ -39,11 +42,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
-    if request.url.path in PUBLIC_PATHS or request.session.get("logged_in"):
+    path = request.url.path
+    if path in PUBLIC_PATHS or path.startswith(PUBLIC_PATH_PREFIXES) or request.session.get("logged_in"):
         return await call_next(request)
     return RedirectResponse("/login")
 
@@ -91,7 +96,10 @@ async def root():
 
 
 @app.get("/login")
-async def login(request: Request, error: Optional[str] = None):
+async def login(request: Request):
+    # 세션 기반 1회성 플래시: 쿼리 파라미터로 넘기면 URL에 에러 문구가 남아서
+    # 새로고침/뒤로가기 때마다 반복 노출되고 공유 URL에도 그대로 찍힘.
+    error = request.session.pop("login_error", None)
     return templates.TemplateResponse(
         request=request, name="login.html", context={"request": request, "error": error}
     )
@@ -109,7 +117,8 @@ async def login_kakao(request: Request):
 async def kakao_login_callback(request: Request, code: str, state: str):
     if state != request.session.get("oauth_state"):
         logger.warning("kakao login state mismatch")
-        return RedirectResponse("/login?error=잘못된 요청입니다. 다시 로그인해주세요.")
+        request.session["login_error"] = "잘못된 요청입니다. 다시 로그인해주세요."
+        return RedirectResponse("/login")
 
     redirect_uri = str(request.url_for("kakao_login_callback"))
     tokens = kakao_client.exchange_code_for_tokens(redirect_uri, code)

@@ -12,47 +12,12 @@
   } catch (e) {}
 })();
 </script>
+<link rel="stylesheet" href="/static/theme.css">
 <style>
-  :root {
-    --bg: #eef0f4;
-    --card: #ffffff;
-    --border: #e5e7eb;
-    --text: #1f2328;
-    --muted: #6b7280;
-    --accent: #2563eb;
-    --accent-soft: #eef2ff;
-    --ok-bg: #ecfdf3; --ok-fg: #067647; --ok-border: #abefc6;
-    --bad-bg: #fef3f2; --bad-fg: #b42318; --bad-border: #fecdca;
-    --hover-bg: #f3f4f6;
-    --radius: 14px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #14161b; --card: #1c1f26; --border: #2e323c;
-      --text: #e8eaed; --muted: #9aa1ac;
-      --accent: #6c93f2; --accent-soft: #22283c;
-      --ok-bg: #0f2a1e; --ok-fg: #4ade80; --ok-border: #1f5c3f;
-      --bad-bg: #33181a; --bad-fg: #f87171; --bad-border: #6b2530;
-      --hover-bg: #262a33;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #14161b; --card: #1c1f26; --border: #2e323c;
-    --text: #e8eaed; --muted: #9aa1ac;
-    --accent: #6c93f2; --accent-soft: #22283c;
-    --ok-bg: #0f2a1e; --ok-fg: #4ade80; --ok-border: #1f5c3f;
-    --bad-bg: #33181a; --bad-fg: #f87171; --bad-border: #6b2530;
-    --hover-bg: #262a33;
-  }
-  * { box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
-    background: var(--bg);
-    color: var(--text);
     margin: 0;
     padding: 40px 16px 80px;
     line-height: 1.4;
-    transition: background .15s, color .15s;
   }
   .page { max-width: 560px; margin: 0 auto; }
   .header { text-align: center; margin-bottom: 24px; }
@@ -61,13 +26,14 @@
   .nav {
     display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
   }
-  .nav a {
+  .nav a, .nav button {
     font-size: 12px; padding: 6px 12px; border-radius: 6px;
     color: var(--text); text-decoration: none; white-space: nowrap;
     border: 1px solid var(--border);
+    background: none; font-family: inherit; cursor: pointer;
   }
   .nav a.active { background: var(--accent); color: white; border-color: var(--accent); }
-  .nav a:hover { background: var(--hover-bg); }
+  .nav a:hover, .nav button:hover { background: var(--hover-bg); }
 
   .card {
     background: var(--card);
@@ -116,7 +82,7 @@
       <a href="/status" class="active">🕒 상태</a>
       <a href="/dashboard">📊 이력</a>
       <a href="/logout">로그아웃</a>
-      <a href="#" id="theme-toggle" onclick="toggleTheme(); return false;">🌙</a>
+      <button type="button" id="theme-toggle" aria-label="다크모드 전환" onclick="toggleTheme()">🌙</button>
     </div>
     <h1>🕒 지금 상태</h1>
     <p>저장된 설정과 스케줄러가 실제로 예약한 값이 일치하는지 확인</p>
@@ -177,20 +143,6 @@
   <a class="gh-link" href="https://github.com/justin1112-jimin/notion-kakao-schedule" target="_blank" rel="noopener">⭐ GitHub</a>
 
 </div>
-<script>
-function toggleTheme() {
-  var root = document.documentElement;
-  var isDark = (root.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
-  var next = isDark ? 'light' : 'dark';
-  root.setAttribute('data-theme', next);
-  try { localStorage.setItem('theme', next); } catch (e) {}
-  document.getElementById('theme-toggle').textContent = next === 'dark' ? '☀️' : '🌙';
-}
-(function () {
-  var root = document.documentElement;
-  var isDark = (root.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
-  document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
-})();
-</script>
+<script src="/static/theme.js"></script>
 </body>
 </html>
