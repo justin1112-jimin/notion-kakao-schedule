@@ -58,6 +58,7 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
                 notion_msg = notion_client.format_message(items)
                 if notion_msg:
                     message_parts.append(f"[Notion]\n{notion_msg}")
+                db.record_source_success(user_id, "notion", now)
             except Exception:
                 failed_sources.append("Notion")
 
@@ -70,6 +71,7 @@ def run_daily_job(user_id: str, source: str = "scheduler") -> str:
                 google_msg = google_calendar_client.format_google_events(events)
                 if google_msg:
                     message_parts.append(f"[Google Calendar]\n{google_msg}")
+                db.record_source_success(user_id, "google_calendar", now)
             except Exception:
                 failed_sources.append("Google Calendar")
 

@@ -27,6 +27,8 @@ DEFAULTS = {
     "last_sent_status": "",
     "google_calendar_refresh_token": "",
     "calendar_sources": "notion",  # "notion" | "google" | "notion,google"
+    "notion_last_success_at": "",
+    "google_calendar_last_success_at": "",
 }
 
 
@@ -115,6 +117,14 @@ def update_calendar_sources(user_id: str, sources: str):
     client = get_client()
     key = _get_settings_key(user_id)
     client.hset(key, "calendar_sources", sources)
+
+
+def record_source_success(user_id: str, source_key: str, when: str):
+    """캘린더 소스별 마지막 조회 성공 시각 기록 (연결은 돼있지만 실제로는
+    죽어있는 토큰을 "✅ 연결됨" 배지만 보고는 구분할 수 없던 문제 대응)"""
+    client = get_client()
+    key = _get_settings_key(user_id)
+    client.hset(key, f"{source_key}_last_success_at", when)
 
 
 def record_send_result(user_id: str, status: str, when: str):
